@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        Int           @id @default(autoincrement())
+  name      String
+  code      String        @unique
+  isActive  Boolean       @default(true)
+  users     UserCompany[]
+  roles     Role[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model User {
+  id            Int           @id @default(autoincrement())
+  email         String        @unique
+  username      String        @unique
+  passwordHash  String
+  firstName     String?
+  lastName      String?
+  userType      String        @default("internal")
+  isActive      Boolean       @default(true)
+  userCompanies UserCompany[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Role {
+  id            Int              @id @default(autoincrement())
+  name          String
+  description   String?
+  companyId     Int
+  isSystemRole  Boolean          @default(false)
+  company       Company          @relation(fields: [companyId], references: [id])
+  permissions   RolePermission[]
+  userCompanies UserCompany[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([name, companyId])
+}
+
+model Permission {
+  id           Int              @id @default(autoincrement())
+  moduleName   String
+  resourceName String
+  actionName   String
+  description  String?
+  isSystem     Boolean          @default(false)
+  roles        RolePermission[]
+
+  @@unique([moduleName, resourceName, actionName])
+}
+
+model RolePermission {
+  id           Int        @id @default(autoincrement())
+  roleId       Int
+  permissionId Int
+  granted      Boolean    @default(true)
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+}
+
+model UserCompany {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  companyId  Int
+  roleId     Int?
+  isDefault  Boolean  @default(false)
+  assignedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+  role    Role?   @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, companyId])
+}
