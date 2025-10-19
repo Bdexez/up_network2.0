@@ -12,10 +12,10 @@ model Company {
   name      String
   code      String        @unique
   isActive  Boolean       @default(true)
-  users     UserCompany[]
-  roles     Role[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  roles     Role[]
+  users     UserCompany[]
 }
 
 model User {
@@ -27,9 +27,9 @@ model User {
   lastName      String?
   userType      String        @default("internal")
   isActive      Boolean       @default(true)
-  userCompanies UserCompany[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+  userCompanies UserCompany[]
 }
 
 model Role {
@@ -38,11 +38,11 @@ model Role {
   description   String?
   companyId     Int
   isSystemRole  Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
   company       Company          @relation(fields: [companyId], references: [id])
   permissions   RolePermission[]
   userCompanies UserCompany[]
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
 
   @@unique([name, companyId])
 }
@@ -64,8 +64,8 @@ model RolePermission {
   roleId       Int
   permissionId Int
   granted      Boolean    @default(true)
-  role         Role       @relation(fields: [roleId], references: [id])
   permission   Permission @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
 
   @@unique([roleId, permissionId])
 }
@@ -77,10 +77,9 @@ model UserCompany {
   roleId     Int?
   isDefault  Boolean  @default(false)
   assignedAt DateTime @default(now())
-
-  user    User    @relation(fields: [userId], references: [id])
-  company Company @relation(fields: [companyId], references: [id])
-  role    Role?   @relation(fields: [roleId], references: [id])
+  company    Company  @relation(fields: [companyId], references: [id])
+  role       Role?    @relation(fields: [roleId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, companyId])
 }

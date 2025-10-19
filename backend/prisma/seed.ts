@@ -15,6 +15,10 @@ async function main() {
     { moduleName: 'system', resourceName: 'users', actionName: 'create' },
     { moduleName: 'crm', resourceName: 'clients', actionName: 'read' },
     { moduleName: 'crm', resourceName: 'clients', actionName: 'create' },
+    { moduleName: 'system', resourceName: 'companies', actionName: 'read' },
+    { moduleName: 'system', resourceName: 'companies', actionName: 'create' },
+    { moduleName: 'system', resourceName: 'users', actionName: 'manage' },
+    { moduleName: 'system', resourceName: 'users', actionName: 'read' },
   ];
 
   for (const perm of permissionsData) {
