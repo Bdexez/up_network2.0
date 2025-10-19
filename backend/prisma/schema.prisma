@@ -16,6 +16,8 @@ model Company {
   updatedAt DateTime      @updatedAt
   roles     Role[]
   users     UserCompany[]
+  Partner   Partner[]
+  Product   Product[]
 }
 
 model User {
@@ -82,4 +84,27 @@ model UserCompany {
   user       User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, companyId])
+}
+
+model Partner {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  companyId Int
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  sku         String   @unique
+  description String?
+  price       Float
+  companyId   Int
+  company     Company  @relation(fields: [companyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

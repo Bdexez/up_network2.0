@@ -19,6 +19,14 @@ async function main() {
     { moduleName: 'system', resourceName: 'companies', actionName: 'create' },
     { moduleName: 'system', resourceName: 'users', actionName: 'manage' },
     { moduleName: 'system', resourceName: 'users', actionName: 'read' },
+    { moduleName: 'crm', resourceName: 'partners', actionName: 'read' },
+    { moduleName: 'crm', resourceName: 'partners', actionName: 'create' },
+    { moduleName: 'crm', resourceName: 'partners', actionName: 'update' },
+    { moduleName: 'crm', resourceName: 'partners', actionName: 'delete' },
+    { moduleName: 'stock', resourceName: 'products', actionName: 'read' },
+    { moduleName: 'stock', resourceName: 'products', actionName: 'create' },
+    { moduleName: 'stock', resourceName: 'products', actionName: 'update' },
+    { moduleName: 'stock', resourceName: 'products', actionName: 'delete' },
   ];
 
   for (const perm of permissionsData) {
