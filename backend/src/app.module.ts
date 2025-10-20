@@ -10,6 +10,8 @@ import { RolesModule } from './modules/auth/roles/roles.module';
 import { UserCompanyModule } from './modules/user-company/user-company.module';
 import { PartnersModule } from './modules/partners/partners.module';
 import { ProductsModule } from './modules/products/products.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { ProductsModule } from './modules/products/products.module';
     UserCompanyModule,
     PartnersModule,
     ProductsModule,
+    OrdersModule,
+    InvoicesModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

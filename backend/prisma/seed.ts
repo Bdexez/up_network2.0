@@ -27,6 +27,12 @@ async function main() {
     { moduleName: 'stock', resourceName: 'products', actionName: 'create' },
     { moduleName: 'stock', resourceName: 'products', actionName: 'update' },
     { moduleName: 'stock', resourceName: 'products', actionName: 'delete' },
+    { moduleName: 'sales', resourceName: 'orders', actionName: 'read' },
+    { moduleName: 'sales', resourceName: 'orders', actionName: 'create' },
+    { moduleName: 'sales', resourceName: 'orders', actionName: 'update' },
+    { moduleName: 'sales', resourceName: 'orders', actionName: 'delete' },
+    { moduleName: 'sales', resourceName: 'invoices', actionName: 'read' },
+    { moduleName: 'sales', resourceName: 'invoices', actionName: 'create' },
   ];
 
   for (const perm of permissionsData) {
