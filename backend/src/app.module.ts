@@ -7,7 +7,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CompaniesModule } from './modules/companies/companies.module';
 import { RolesModule } from './modules/auth/roles/roles.module';
-import { UserCompanyModule } from './modules/user-company/user-company.module';
 import { PartnersModule } from './modules/partners/partners.module';
 import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -20,7 +19,6 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
     UsersModule,
     RolesModule,
     CompaniesModule,
-    UserCompanyModule,
     PartnersModule,
     ProductsModule,
     OrdersModule,

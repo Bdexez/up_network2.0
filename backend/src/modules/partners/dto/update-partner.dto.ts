@@ -12,4 +12,8 @@ export class UpdatePartnerDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
 }

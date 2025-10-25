@@ -17,26 +17,20 @@ async function main() {
     { moduleName: 'system', resourceName: 'users', actionName: 'manage' },
     { moduleName: 'system', resourceName: 'users', actionName: 'update' },
     { moduleName: 'system', resourceName: 'users', actionName: 'delete' },
-    { moduleName: 'crm', resourceName: 'clients', actionName: 'read' },
-    { moduleName: 'crm', resourceName: 'clients', actionName: 'create' },
     { moduleName: 'system', resourceName: 'companies', actionName: 'read' },
     { moduleName: 'system', resourceName: 'companies', actionName: 'create' },
-    { moduleName: 'crm', resourceName: 'partners', actionName: 'read' },
+    { moduleName: 'system', resourceName: 'companies', actionName: 'update' },
+    { moduleName: 'system', resourceName: 'companies', actionName: 'delete' },
     { moduleName: 'crm', resourceName: 'partners', actionName: 'create' },
+    { moduleName: 'crm', resourceName: 'partners', actionName: 'read' },
     { moduleName: 'crm', resourceName: 'partners', actionName: 'update' },
     { moduleName: 'crm', resourceName: 'partners', actionName: 'delete' },
     { moduleName: 'stock', resourceName: 'products', actionName: 'read' },
     { moduleName: 'stock', resourceName: 'products', actionName: 'create' },
     { moduleName: 'stock', resourceName: 'products', actionName: 'update' },
     { moduleName: 'stock', resourceName: 'products', actionName: 'delete' },
-    { moduleName: 'sales', resourceName: 'orders', actionName: 'read' },
-    { moduleName: 'sales', resourceName: 'orders', actionName: 'create' },
-    { moduleName: 'sales', resourceName: 'orders', actionName: 'update' },
-    { moduleName: 'sales', resourceName: 'orders', actionName: 'delete' },
-    { moduleName: 'sales', resourceName: 'invoices', actionName: 'read' },
     { moduleName: 'sales', resourceName: 'invoices', actionName: 'create' },
-    { moduleName: 'system', resourceName: 'companies', actionName: 'update' },
-    { moduleName: 'system', resourceName: 'companies', actionName: 'delete' },
+    { moduleName: 'sales', resourceName: 'invoices', actionName: 'read' },
   ];
 
   for (const perm of permissionsData) {
@@ -102,7 +96,6 @@ async function main() {
       roleId: adminRole.id,
     },
   });
-
   console.log('🌱 Seed terminé avec succès');
 }
 

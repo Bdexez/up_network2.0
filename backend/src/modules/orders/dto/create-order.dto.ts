@@ -1,11 +1,11 @@
-import { IsArray, IsInt, ValidateNested } from 'class-validator';
+import { IsInt, IsNumber, ValidateNested, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class OrderItemInput {
+class OrderItemDto {
   @IsInt()
   productId: number;
 
-  @IsInt()
+  @IsNumber()
   quantity: number;
 }
 
@@ -21,6 +21,6 @@ export class CreateOrderDto {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => OrderItemInput)
-  items: OrderItemInput[];
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[];
 }

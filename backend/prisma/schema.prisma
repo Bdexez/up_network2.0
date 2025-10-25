@@ -93,6 +93,7 @@ model Partner {
   name      String
   email     String?
   phone     String?
+  address   String?
   companyId Int
   company   Company  @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())

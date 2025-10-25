@@ -31,8 +31,15 @@ export class ProductsService {
   }
 
   async remove(id: number) {
-    const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) throw new NotFoundException('Produit introuvable');
-    return this.prisma.product.delete({ where: { id } });
+    const existingProduct = await this.prisma.product.findUnique({
+      where: { id },
+    });
+    if (!existingProduct) {
+      throw new NotFoundException('Produit introuvable');
+    }
+
+    await this.prisma.product.delete({ where: { id } });
+
+    return { message: `Produit ${id} supprimé avec succès` };
   }
 }

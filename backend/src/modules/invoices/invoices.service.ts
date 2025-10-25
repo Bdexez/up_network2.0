@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -19,23 +21,23 @@ export class InvoicesService {
     });
 
     if (!order) throw new NotFoundException('Commande introuvable');
-    if (await this.prisma.invoice.findUnique({ where: { orderId } })) {
-      throw new Error('Une facture existe déjà pour cette commande');
-    }
 
-    // Calcul du total (sécurité)
+    const existing = await this.prisma.invoice.findUnique({
+      where: { orderId },
+    });
+    if (existing)
+      throw new Error('Une facture existe déjà pour cette commande');
+
     const total = order.items.reduce(
       (acc, item) => acc + item.price * item.quantity,
       0,
     );
 
-    // Génération du PDF
     const invoicesDir = path.join(process.cwd(), 'invoices');
     if (!fs.existsSync(invoicesDir)) fs.mkdirSync(invoicesDir);
 
     const pdfPath = path.join(invoicesDir, `invoice_${orderId}.pdf`);
     const doc = new PDFDocument();
-
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
 
@@ -48,12 +50,9 @@ export class InvoicesService {
 
     doc.fontSize(12).text('Produits :');
     doc.moveDown();
-
     order.items.forEach((item) => {
       doc.text(
-        `${item.product.name} — Qté: ${item.quantity} — Prix: ${item.price.toFixed(
-          2,
-        )} €`,
+        `${item.product.name} — Qté: ${item.quantity} — Prix: ${item.price.toFixed(2)} €`,
       );
     });
 
@@ -61,11 +60,8 @@ export class InvoicesService {
     doc.fontSize(14).text(`Total: ${total.toFixed(2)} €`, { align: 'right' });
     doc.end();
 
-    await new Promise<void>((resolve) => {
-      stream.on('finish', resolve);
-    });
+    await new Promise<void>((resolve) => stream.on('finish', resolve));
 
-    // Enregistre la facture en base
     return this.prisma.invoice.create({
       data: {
         orderId,
@@ -89,5 +85,17 @@ export class InvoicesService {
     });
     if (!invoice) throw new NotFoundException('Facture introuvable');
     return invoice;
+  }
+
+  async update(id: number, data: UpdateInvoiceDto) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) throw new NotFoundException('Facture introuvable');
+    return this.prisma.invoice.update({ where: { id }, data });
+  }
+
+  async remove(id: number) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) throw new NotFoundException('Facture introuvable');
+    return this.prisma.invoice.delete({ where: { id } });
   }
 }

@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
@@ -30,7 +31,12 @@ export class PartnersController {
   @Get()
   @RequirePermission('crm', 'partners', 'read')
   findAll(@Query('companyId') companyId: string) {
-    return this.partnersService.findAll(Number(companyId));
+    // On convertit en number et on suppose que companyId est toujours fourni
+    const id = Number(companyId);
+    if (Number.isNaN(id)) {
+      throw new BadRequestException('companyId invalide');
+    }
+    return this.partnersService.findAll(id); // toujours un number
   }
 
   @Get(':id')
