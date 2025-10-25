@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
@@ -13,12 +14,13 @@ async function main() {
   const permissionsData = [
     { moduleName: 'system', resourceName: 'users', actionName: 'read' },
     { moduleName: 'system', resourceName: 'users', actionName: 'create' },
+    { moduleName: 'system', resourceName: 'users', actionName: 'manage' },
+    { moduleName: 'system', resourceName: 'users', actionName: 'update' },
+    { moduleName: 'system', resourceName: 'users', actionName: 'delete' },
     { moduleName: 'crm', resourceName: 'clients', actionName: 'read' },
     { moduleName: 'crm', resourceName: 'clients', actionName: 'create' },
     { moduleName: 'system', resourceName: 'companies', actionName: 'read' },
     { moduleName: 'system', resourceName: 'companies', actionName: 'create' },
-    { moduleName: 'system', resourceName: 'users', actionName: 'manage' },
-    { moduleName: 'system', resourceName: 'users', actionName: 'read' },
     { moduleName: 'crm', resourceName: 'partners', actionName: 'read' },
     { moduleName: 'crm', resourceName: 'partners', actionName: 'create' },
     { moduleName: 'crm', resourceName: 'partners', actionName: 'update' },
@@ -33,6 +35,8 @@ async function main() {
     { moduleName: 'sales', resourceName: 'orders', actionName: 'delete' },
     { moduleName: 'sales', resourceName: 'invoices', actionName: 'read' },
     { moduleName: 'sales', resourceName: 'invoices', actionName: 'create' },
+    { moduleName: 'system', resourceName: 'companies', actionName: 'update' },
+    { moduleName: 'system', resourceName: 'companies', actionName: 'delete' },
   ];
 
   for (const perm of permissionsData) {
@@ -68,17 +72,36 @@ async function main() {
     });
   }
 
-  // 5. Associer ton utilisateur Admin existant à ce rôle
-  const adminUser = await prisma.user.findUnique({
+  // 5. Créer ou récupérer l’utilisateur Admin
+  let adminUser = await prisma.user.findUnique({
     where: { email: 'admin@demo.com' },
   });
 
-  if (adminUser) {
-    await prisma.userCompany.updateMany({
-      where: { userId: adminUser.id, companyId: company.id },
-      data: { roleId: adminRole.id },
+  if (!adminUser) {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+
+    adminUser = await prisma.user.create({
+      data: {
+        email: 'admin@demo.com',
+        username: 'admin',
+        passwordHash: hashedPassword,
+        userType: 'admin',
+      },
     });
   }
+
+  // 6. Associer l’admin au rôle Admin pour la company
+  await prisma.userCompany.upsert({
+    where: {
+      userId_companyId: { userId: adminUser.id, companyId: company.id },
+    },
+    update: { roleId: adminRole.id },
+    create: {
+      userId: adminUser.id,
+      companyId: company.id,
+      roleId: adminRole.id,
+    },
+  });
 
   console.log('🌱 Seed terminé avec succès');
 }
@@ -88,4 +111,6 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => {
+    prisma.$disconnect().catch(() => {});
+  });

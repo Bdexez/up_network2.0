@@ -25,4 +25,20 @@ export class CompaniesService {
     if (!company) throw new NotFoundException('Entreprise introuvable');
     return company;
   }
+
+  async update(
+    id: number,
+    data: { name?: string; code?: string; isActive?: boolean },
+  ) {
+    return this.prisma.company.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async delete(id: number) {
+    return this.prisma.company.delete({
+      where: { id },
+    });
+  }
 }

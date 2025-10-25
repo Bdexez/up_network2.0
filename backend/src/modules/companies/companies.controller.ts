@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { CompaniesService } from './companies.service';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
@@ -25,5 +34,21 @@ export class CompaniesController {
   @RequirePermission('system', 'companies', 'read')
   findOne(@Param('id') id: string) {
     return this.companiesService.findOne(Number(id));
+  }
+
+  // --- AJOUTER LA ROUTE PUT ---
+  @Put(':id')
+  @RequirePermission('system', 'companies', 'update')
+  update(
+    @Param('id') id: string,
+    @Body() body: { name?: string; code?: string; isActive?: boolean },
+  ) {
+    return this.companiesService.update(Number(id), body);
+  }
+
+  @Delete(':id')
+  @RequirePermission('system', 'companies', 'delete')
+  delete(@Param('id') id: string) {
+    return this.companiesService.delete(Number(id));
   }
 }

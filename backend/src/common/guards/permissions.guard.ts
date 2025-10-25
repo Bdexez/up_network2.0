@@ -25,8 +25,9 @@ export class PermissionsGuard implements CanActivate {
     const user = request.user;
     if (!user) throw new ForbiddenException('Utilisateur non authentifié');
 
+    // On prend le premier rôle assigné à l'utilisateur, peu importe isDefault
     const userCompany = await this.prisma.userCompany.findFirst({
-      where: { userId: user.userId, isDefault: true },
+      where: { userId: user.userId },
       include: {
         role: {
           include: {
