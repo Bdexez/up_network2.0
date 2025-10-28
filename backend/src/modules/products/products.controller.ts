@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
@@ -30,7 +31,13 @@ export class ProductsController {
   @Get()
   @RequirePermission('stock', 'products', 'read')
   findAll(@Query('companyId') companyId: string) {
-    return this.productsService.findAll(Number(companyId));
+    const companyIdNumber = Number(companyId);
+    if (!companyId || isNaN(companyIdNumber)) {
+      throw new BadRequestException(
+        'Le paramètre companyId doit être fourni et être un nombre',
+      );
+    }
+    return this.productsService.findAll(companyIdNumber);
   }
 
   @Get(':id')

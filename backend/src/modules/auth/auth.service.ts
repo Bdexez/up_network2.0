@@ -40,7 +40,7 @@ export class AuthService {
       include: { userCompanies: true },
     });
 
-    return this.signToken(user.id, user.email);
+    return this.signToken(user.id, user.email, user.username);
   }
 
   async login(dto: LoginDto) {
@@ -54,11 +54,11 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Identifiants invalides');
 
-    return this.signToken(user.id, user.email);
+    return this.signToken(user.id, user.email, user.username);
   }
 
-  private signToken(userId: number, email: string) {
-    const payload = { sub: userId, email };
+  private signToken(userId: number, email: string, username: string) {
+    const payload = { sub: userId, email, username };
     const accessToken = this.jwtService.sign(payload);
     return { accessToken };
   }

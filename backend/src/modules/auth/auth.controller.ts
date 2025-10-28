@@ -3,6 +3,15 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { AuthGuard } from '@nestjs/passport';
+import { Request } from 'express';
+
+type AuthenticatedRequest = Request & {
+  user: {
+    userId: number;
+    email: string;
+    username: string;
+  };
+};
 
 @Controller('auth')
 export class AuthController {
@@ -20,7 +29,7 @@ export class AuthController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get('me')
-  async getMe(@Req() req) {
+  async getMe(@Req() req: AuthenticatedRequest) {
     return this.authService.getProfile(req.user.userId);
   }
 }

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -54,15 +55,28 @@ export class UsersService {
     if (!existingUser)
       throw new NotFoundException(`Utilisateur ${id} introuvable`);
 
-    const updateData: any = { ...data };
-    if (data.password) {
-      updateData.passwordHash = await bcrypt.hash(data.password, 10);
-      delete updateData.password;
+    // Typage explicite pour updateData — pas de any
+    const updateData: {
+      email?: string;
+      username?: string;
+      passwordHash?: string;
+      isActive?: boolean;
+    } = {};
+
+    if (typeof data.email === 'string') updateData.email = data.email;
+    if (typeof data.username === 'string') updateData.username = data.username;
+    if (typeof data.isActive === 'boolean') updateData.isActive = data.isActive;
+
+    if (typeof data.password === 'string' && data.password.length > 0) {
+      // bcrypt.hash retourne Promise<string>, typé correctement
+      const hashed = await bcrypt.hash(data.password, 10);
+      updateData.passwordHash = hashed;
     }
 
+    // cast final vers le type attendu par Prisma pour éviter l'usage d'any
     return this.prisma.user.update({
       where: { id },
-      data: updateData,
+      data: updateData as Prisma.UserUpdateInput,
     });
   }
 
