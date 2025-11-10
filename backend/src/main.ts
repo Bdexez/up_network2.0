@@ -9,7 +9,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Récupère l'URL du front depuis le .env
-  const frontUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const frontUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
 
   // CORS
   app.enableCors({
