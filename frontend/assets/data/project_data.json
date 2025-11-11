@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "name": "Halette Boivin",
+    "avatar": "assets/images/users/avatar-2.jpg",
+    "project_name": "App design and development",
+    "start_date": "01/01/2022",
+    "due_date": "10/12/2023",
+    "status": "Work in Progress"
+  },
+  {
+    "id": 2,
+    "name": "Durandana Jolicoeur",
+    "avatar": "assets/images/users/avatar-3.jpg",
+    "project_name": "Coffee detail page - Main Page",
+    "start_date": "21/07/2023",
+    "due_date": "12/05/2024",
+    "status": "Pending"
+  },
+  {
+    "id": 3,
+    "name": "Lucas Sabourin",
+    "avatar": "assets/images/users/avatar-4.jpg",
+    "project_name": "Poster illustation design",
+    "start_date": "18/03/2023",
+    "due_date": "28/09/2023",
+    "status": "Done"
+  },
+  {
+    "id": 4,
+    "name": "Donatien Brunelle",
+    "avatar": "assets/images/users/avatar-6.jpg",
+    "project_name": "Drinking bottle graphics",
+    "start_date": "02/10/2022",
+    "due_date": "07/05/2023",
+    "status": "Work in Progress"
+  },
+  {
+    "id": 5,
+    "name": "Karel Auberjo",
+    "avatar": "assets/images/users/avatar-5.jpg",
+    "project_name": "Landing page design - Home",
+    "start_date": "17/01/2022",
+    "due_date": "25/05/2023",
+    "status": "Coming soon"
+  }
+]

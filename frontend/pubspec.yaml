@@ -1,0 +1,80 @@
+name: henox
+description: "A new Flutter project."
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  ## State
+  get: ^4.6.6
+  provider: ^6.1.2
+
+  ## Storage
+  shared_preferences: ^2.3.2
+
+  ## URL
+  url_launcher: ^6.3.0
+
+  url_strategy: ^0.3.0
+  quill_html_editor: ^2.2.8
+  file_picker: ^6.2.1
+
+  ## Map
+  google_maps_flutter: ^2.9.0
+
+  ## Font
+  google_fonts: ^6.2.1
+
+  ## Icon
+  flutter_lucide: ^1.4.0
+  remixicon: ^1.2.0
+
+  ## Syncfusion
+  syncfusion_flutter_charts: ^31.2.2
+  syncfusion_flutter_calendar: ^31.2.2
+  syncfusion_flutter_sliders: ^31.2.2
+  syncfusion_flutter_core: ^31.2.2
+  syncfusion_flutter_maps: ^31.2.2
+
+  ## Other
+  appflowy_board: ^0.1.2
+  intl: ^0.20.2
+  flutter_svg: ^2.0.10+1
+  video_player: ^2.9.1
+  shimmer: ^3.0.0
+  flutter_reorderable_grid_view: ^5.3.0
+  flutter_colorpicker: ^1.1.0
+  universal_html: ^2.2.4
+  dio: ^5.9.0
+  flutter_secure_storage: ^9.2.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/images/brands/
+    - assets/images/dummy/
+    - assets/images/flags/
+    - assets/images/product/
+    - assets/images/small/
+    - assets/images/users/
+    - assets/lang/
+    - assets/data/
+    - assets/images/svg/

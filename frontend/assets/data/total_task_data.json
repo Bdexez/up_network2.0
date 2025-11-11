@@ -1,0 +1,97 @@
+[
+  {
+    "id": 1,
+    "task": "Landing UX",
+    "task_id": "SPK - 01",
+    "due_date": "2024-03-31T08:51:37Z",
+    "assigned_date": "2023-02-24T03:09:09Z",
+    "status": "New",
+    "priority": "Medium",
+    "assigned_to": [
+      "assets/images/users/avatar-1.jpg",
+      "assets/images/users/avatar-2.jpg",
+      "assets/images/users/avatar-3.jpg"
+    ]
+  },
+  {
+    "id": 2,
+    "task": "Adox Admin Backend",
+    "task_id": "SJN - 01",
+    "due_date": "2024-08-22T17:31:44Z",
+    "assigned_date": "2023-05-20T04:33:54Z",
+    "status": "InProgress",
+    "priority": "High",
+    "assigned_to": [
+      "assets/images/users/avatar-4.jpg",
+      "assets/images/users/avatar-5.jpg",
+      "assets/images/users/avatar-6.jpg"
+    ]
+  },
+  {
+    "id": 3,
+    "task": "Attex Admin UI Design",
+    "task_id": "SUJ - 02",
+    "due_date": "2023-09-29T23:35:50Z",
+    "assigned_date": "2023-03-28T23:37:55Z",
+    "status": "Pending",
+    "priority": "Low",
+    "assigned_to": [
+      "assets/images/users/avatar-7.jpg",
+      "assets/images/users/avatar-8.jpg",
+      "assets/images/users/avatar-9.jpg"
+    ]
+  },
+  {
+    "id": 4,
+    "task": "Appexy Landing NodeJS Setup",
+    "task_id": "SKL - 01",
+    "due_date": "2024-01-26T11:20:04Z",
+    "assigned_date": "2023-01-19T11:58:10Z",
+    "status": "Pending",
+    "priority": "Medium",
+    "assigned_to": [
+      "assets/images/users/avatar-10.jpg",
+      "assets/images/users/avatar-1.jpg"
+    ]
+  },
+  {
+    "id": 5,
+    "task": "Minton Admin",
+    "task_id": "SBK - 08",
+    "due_date": "2024-06-26T17:25:59Z",
+    "assigned_date": "2023-04-18T20:16:07Z",
+    "status": "New",
+    "priority": "High",
+    "assigned_to": [
+      "assets/images/users/avatar-9.jpg",
+      "assets/images/users/avatar-4.jpg",
+      "assets/images/users/avatar-1.jpg"
+    ]
+  },
+  {
+    "id": 6,
+    "task": "Prompt Tailwind",
+    "task_id": "SNK - 11",
+    "due_date": "2024-09-10T20:52:30Z",
+    "assigned_date": "2023-12-31T16:11:24Z",
+    "status": "New",
+    "priority": "Low",
+    "assigned_to": [
+      "assets/images/users/avatar-10.jpg"
+    ]
+  },
+  {
+    "id": 7,
+    "task": "Attex Tailwind Next",
+    "task_id": "SNK - 11",
+    "due_date": "2024-01-02T19:44:09Z",
+    "assigned_date": "2023-06-18T00:50:57Z",
+    "status": "New",
+    "priority": "Low",
+    "assigned_to": [
+      "assets/images/users/avatar-6.jpg",
+      "assets/images/users/avatar-9.jpg",
+      "assets/images/users/avatar-2.jpg"
+    ]
+  }
+]
