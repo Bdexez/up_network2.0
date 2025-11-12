@@ -3,7 +3,7 @@ import 'package:henox/helpers/services/localizations/language.dart';
 import 'package:henox/helpers/theme/app_notifier.dart';
 import 'package:provider/provider.dart';
 
-class AppLocalizationsDelegate extends LocalizationsDelegate {
+class AppLocalizationsDelegate extends LocalizationsDelegate<void> {
   final BuildContext context;
 
   const AppLocalizationsDelegate(this.context);
@@ -13,14 +13,12 @@ class AppLocalizationsDelegate extends LocalizationsDelegate {
       Language.getLanguagesCodes().contains(locale.languageCode);
 
   @override
-  Future load(Locale locale) => _load(locale);
-
-  Future _load(Locale locale) async {
+  Future<void> load(Locale locale) async {
+    // Change dynamiquement la langue de l’application via AppNotifier
     Provider.of<AppNotifier>(context, listen: false)
         .changeLanguage(Language.getLanguageFromCode(locale.languageCode));
-    return;
   }
 
   @override
-  bool shouldReload(LocalizationsDelegate old) => false;
+  bool shouldReload(covariant LocalizationsDelegate<void> old) => false;
 }

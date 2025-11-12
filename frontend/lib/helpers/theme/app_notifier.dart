@@ -9,31 +9,36 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppNotifier extends ChangeNotifier {
   AppNotifier();
 
+  /// 🔹 Initialisation complète (appelée au démarrage)
   Future<void> init() async {
     _changeTheme();
     notifyListeners();
   }
 
-  updateTheme(ThemeCustomizer themeCustomizer) {
+  /// 🔹 Met à jour le thème courant et sauvegarde la config
+  Future<void> updateTheme(ThemeCustomizer themeCustomizer) async {
     _changeTheme();
-
     notifyListeners();
 
-    LocalStorage.setCustomizer(themeCustomizer);
+    // ✅ On enregistre le thème directement via SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("theme_customizer", themeCustomizer.toJSON());
   }
 
+  /// 🔹 Met à jour les préférences du thème en local
   Future<void> updateInStorage(ThemeCustomizer themeCustomizer) async {
-    SharedPreferences sharedPreferences = await SharedPreferences.getInstance();
-    sharedPreferences.setString("theme_customizer", themeCustomizer.toJSON());
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("theme_customizer", themeCustomizer.toJSON());
   }
 
+  /// 🔹 Gère la direction du texte (LTR/RTL)
   void changeDirectionality(TextDirection textDirection, [bool notify = true]) {
     AppTheme.textDirection = textDirection;
     My.setTextDirection(textDirection);
-
     if (notify) notifyListeners();
   }
 
+  /// 🔹 Change la langue et la direction (RTL/LTR)
   Future<void> changeLanguage(Language language,
       {bool notify = true, bool changeDirection = true}) async {
     if (changeDirection) {
@@ -44,11 +49,16 @@ class AppNotifier extends ChangeNotifier {
       }
     }
 
+    // ✅ Sauvegarde dans les préférences
+    await LocalStorage.setLanguage(language);
+
+    // ✅ Applique via le ThemeCustomizer
     await ThemeCustomizer.changeLanguage(language);
 
     if (notify) notifyListeners();
   }
 
+  /// 🔹 Applique le thème actif
   void _changeTheme() {
     AppTheme.theme = AppTheme.getThemeFromThemeMode();
     AppStyle.changeMyTheme();

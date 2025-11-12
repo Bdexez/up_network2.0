@@ -6,6 +6,19 @@ class AuthService {
   static bool isLoggedIn = false;
   static String? token;
 
+  /// 🔹 Initialisation (appelée dans main.dart)
+  static Future<void> init() async {
+    // Récupère le token sauvegardé et l’état de connexion
+    token = await LocalStorage.getItem("token");
+    isLoggedIn = await LocalStorage.isUserLoggedIn();
+
+    // Si le token existe mais pas le flag, on corrige
+    if (token != null && !isLoggedIn) {
+      await LocalStorage.setLoggedInUser(true);
+      isLoggedIn = true;
+    }
+  }
+
   /// 🔹 Connexion utilisateur
   static Future<Map<String, String>?> loginUser(
       Map<String, dynamic> data) async {
@@ -22,12 +35,16 @@ class AuthService {
           isLoggedIn = true;
         }
 
-        return null;
+        return null; // Pas d’erreurs
       }
 
-      if (response.statusCode == 401)
+      if (response.statusCode == 401) {
         return {"password": "Invalid email or password"};
-      if (response.statusCode == 404) return {"username": "User not found"};
+      }
+
+      if (response.statusCode == 404) {
+        return {"username": "User not found"};
+      }
 
       return {"general": "Unexpected error: ${response.statusCode}"};
     } catch (e) {
@@ -43,22 +60,26 @@ class AuthService {
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         return null;
-      } else {
-        final json = jsonDecode(response.body);
-        Map<String, String> errors = {};
-        if (json["message"] is List) {
-          for (var msg in json["message"]) {
-            if (msg.toString().contains("username"))
-              errors["username"] = msg.toString();
-            else if (msg.toString().contains("password"))
-              errors["password"] = msg.toString();
-            else
-              errors["general"] = msg.toString();
-          }
-        } else if (json["message"] is String)
-          errors["general"] = json["message"];
-        return errors;
       }
+
+      final json = jsonDecode(response.body);
+      Map<String, String> errors = {};
+
+      if (json["message"] is List) {
+        for (var msg in json["message"]) {
+          if (msg.toString().contains("username")) {
+            errors["username"] = msg.toString();
+          } else if (msg.toString().contains("password")) {
+            errors["password"] = msg.toString();
+          } else {
+            errors["general"] = msg.toString();
+          }
+        }
+      } else if (json["message"] is String) {
+        errors["general"] = json["message"];
+      }
+
+      return errors;
     } catch (e) {
       return {"general": "Connection error: $e"};
     }

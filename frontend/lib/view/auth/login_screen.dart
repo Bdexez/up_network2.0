@@ -26,7 +26,10 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void initState() {
     super.initState();
-    controller = Get.put(LoginController(), tag: 'login_controller');
+    // ✅ Crée le controller seulement si il n'existe pas
+    controller =
+        Get.put(LoginController(), tag: 'login_controller', permanent: true);
+
     outlineInputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
       borderSide: BorderSide(color: Color(0x3d6c757d)),
@@ -47,10 +50,7 @@ class _LoginScreenState extends State<LoginScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Logo
                   _buildLogo(),
-
-                  // Form fields
                   Expanded(
                     child: SingleChildScrollView(
                       physics: BouncingScrollPhysics(),
@@ -59,10 +59,8 @@ class _LoginScreenState extends State<LoginScreen>
                         children: [
                           MyText.titleMedium("Welcome Back", fontWeight: 600),
                           MySpacing.height(8),
-                          MyText.bodySmall(
-                            "Login to your account",
-                            muted: true,
-                          ),
+                          MyText.bodySmall("Login to your account",
+                              muted: true),
                           MySpacing.height(16),
                           _buildEmailField(controller),
                           MySpacing.height(12),
@@ -75,8 +73,6 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ),
                   ),
-
-                  // Sign up redirect
                   _buildSignUpRedirect(controller),
                 ],
               ),
@@ -101,7 +97,8 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildEmailField(LoginController controller) {
-    final emailValidator = controller.basicValidator.getValidation<String>('email');
+    final emailValidator =
+        controller.basicValidator.getValidation<String>('email');
     final emailController = controller.basicValidator.getController('email');
 
     return Column(
@@ -132,21 +129,18 @@ class _LoginScreenState extends State<LoginScreen>
               borderSide: BorderSide(color: Colors.red, width: 1.5),
             ),
           ),
-          onChanged: (value) {
-            controller.clearFieldError('email');
-          },
-          onFieldSubmitted: (_) {
-            // Optionnel: focus sur le champ password
-            FocusScope.of(context).nextFocus();
-          },
+          onChanged: (value) => controller.clearFieldError('email'),
+          onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
         ),
       ],
     );
   }
 
   Widget _buildPasswordField(LoginController controller) {
-    final passwordValidator = controller.basicValidator.getValidation<String>('password');
-    final passwordController = controller.basicValidator.getController('password');
+    final passwordValidator =
+        controller.basicValidator.getValidation<String>('password');
+    final passwordController =
+        controller.basicValidator.getController('password');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,13 +170,9 @@ class _LoginScreenState extends State<LoginScreen>
               borderSide: BorderSide(color: Colors.red, width: 1.5),
             ),
           ),
-          onChanged: (value) {
-            controller.clearFieldError('password');
-          },
+          onChanged: (value) => controller.clearFieldError('password'),
           onFieldSubmitted: (_) {
-            if (!controller.isLoading) {
-              controller.onLogin();
-            }
+            if (!controller.isLoading) controller.onLogin();
           },
         ),
       ],
@@ -194,21 +184,19 @@ class _LoginScreenState extends State<LoginScreen>
       onPressed: controller.isLoading ? null : () => controller.onLogin(),
       backgroundColor: contentTheme.primary,
       elevation: 0,
-      borderRadius: BorderRadius.circular(8), // CORRIGÉ : BorderRadius.circular(8) au lieu de 8
+      borderRadius: BorderRadius.circular(8),
       child: controller.isLoading
           ? SizedBox(
               height: 20,
               width: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(contentTheme.onPrimary),
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(contentTheme.onPrimary),
               ),
             )
-          : MyText.bodyMedium(
-              "Login",
-              color: contentTheme.onPrimary,
-              fontWeight: 600,
-            ),
+          : MyText.bodyMedium("Login",
+              color: contentTheme.onPrimary, fontWeight: 600),
     );
   }
 
@@ -218,14 +206,10 @@ class _LoginScreenState extends State<LoginScreen>
       child: TextButton(
         onPressed: () => Get.toNamed('/auth/forgot_password'),
         style: TextButton.styleFrom(
-          padding: MySpacing.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        child: MyText.bodySmall(
-          "Forgot Password?",
-          fontWeight: 600,
-          muted: true,
-        ),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        child:
+            MyText.bodySmall("Forgot Password?", fontWeight: 600, muted: true),
       ),
     );
   }
@@ -236,39 +220,30 @@ class _LoginScreenState extends State<LoginScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          MyText.bodyMedium(
-            "Don't have an account?",
-            fontWeight: 600,
-            muted: true,
-          ),
+          MyText.bodyMedium("Don't have an account?",
+              fontWeight: 600, muted: true),
           MySpacing.width(8),
           GestureDetector(
-            onTap: () {
-              if (!controller.isLoading) {
-                controller.gotoRegister();
-              }
-            },
+            onTap:
+                controller.isLoading ? null : () => controller.gotoRegister(),
             child: MouseRegion(
-              cursor: controller.isLoading ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+              cursor: controller.isLoading
+                  ? SystemMouseCursors.forbidden
+                  : SystemMouseCursors.click,
               child: AnimatedContainer(
                 duration: Duration(milliseconds: 200),
                 child: MyText.bodyMedium(
                   "Sign Up",
                   fontWeight: 600,
-                  color: controller.isLoading ? Colors.grey : contentTheme.primary,
+                  color:
+                      controller.isLoading ? Colors.grey : contentTheme.primary,
                   decoration: TextDecoration.underline,
                 ),
               ),
             ),
-          )
+          ),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    // Ne pas disposer le controller ici, GetX s'en occupe
-    super.dispose();
   }
 }

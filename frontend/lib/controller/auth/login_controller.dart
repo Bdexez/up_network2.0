@@ -13,19 +13,18 @@ class LoginController extends MyController {
   @override
   void onInit() {
     super.onInit();
+
+    // Crée les champs et les controllers UNE seule fois
     basicValidator.addField<String>(
       'email',
       required: true,
       label: "Email",
-      validators: [MyEmailValidator()],
-      controller: TextEditingController(),
     );
 
     basicValidator.addField<String>(
       'password',
       required: true,
       validators: [MyLengthValidator(min: 6, max: 20)],
-      controller: TextEditingController(),
     );
   }
 
@@ -76,10 +75,8 @@ class LoginController extends MyController {
   }
 
   void clearFieldError(String fieldName) {
-    if (basicValidator.errors.containsKey(fieldName)) {
-      basicValidator.errors.remove(fieldName);
-      update();
-    }
+    basicValidator.errors.remove(fieldName);
+    update();
   }
 
   bool get isFormValid => basicValidator.validateForm();
@@ -108,8 +105,7 @@ class LoginController extends MyController {
 
   @override
   void onClose() {
-    basicValidator.getController('email')?.dispose();
-    basicValidator.getController('password')?.dispose();
+    // ❌ Ne rien disposer, Flutter gère les controllers automatiquement
     super.onClose();
   }
 }

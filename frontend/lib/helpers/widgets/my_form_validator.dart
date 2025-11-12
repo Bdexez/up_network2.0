@@ -12,14 +12,16 @@ class MyFormValidator {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _data = {};
 
+  /// 🔹 Ajoute un champ avec ou sans TextEditingController
   void addField<T>(String name,
       {bool required = false,
       List<MyFieldValidatorRule<T>> validators = const [],
       String? label,
       TextEditingController? controller}) {
+    // Si aucun controller n’est fourni, on en crée un
+    _controllers[name] = controller ?? TextEditingController();
     _validators[name] = _createValidation<T>(name,
         required: required, validators: validators, label: label);
-    if (controller != null) _controllers[name] = controller;
   }
 
   MyFieldValidator<T>? getValidation<T>(String name) =>
@@ -27,7 +29,7 @@ class MyFormValidator {
           ? _validators[name] as MyFieldValidator<T>
           : null;
 
-  TextEditingController? getController(String name) => _controllers[name];
+  TextEditingController getController(String name) => _controllers[name]!;
 
   MyFieldValidator<T> _createValidation<T>(String name,
       {bool required = false,
@@ -36,20 +38,18 @@ class MyFormValidator {
     return (T? value) {
       label ??= name.capitalize;
       String? error = getError(name);
-      if (error != null) {
-        return error;
-      }
+      if (error != null) return error;
 
       if (required && (value == null || (value.toString().isEmpty))) {
         return "$label is required";
       }
+
       for (MyFieldValidatorRule validator in validators) {
         String? validationError =
             validator.validate(value, required, getData());
-        if (validationError != null) {
-          return validationError;
-        }
+        if (validationError != null) return validationError;
       }
+
       return null;
     };
   }
@@ -57,20 +57,16 @@ class MyFormValidator {
   String? getError(String name) {
     if (errors.containsKey(name)) {
       dynamic error = errors[name];
+      String errorText;
 
       if (error is List && error.isNotEmpty) {
-        String errorText = error[0].toString();
-        if (consumeError) {
-          remainingError.remove(name);
-        }
-        return errorText;
+        errorText = error[0].toString();
       } else {
-        String errorText = error.toString();
-        if (consumeError) {
-          remainingError.remove(name);
-        }
-        return errorText;
+        errorText = error.toString();
       }
+
+      if (consumeError) remainingError.remove(name);
+      return errorText;
     }
     return null;
   }
@@ -81,7 +77,6 @@ class MyFormValidator {
       remainingError.clear();
     }
     this.consumeError = consumeError;
-
     return formKey.currentState?.validate() ?? false;
   }
 
@@ -91,21 +86,18 @@ class MyFormValidator {
     };
   }
 
+  /// 🔹 Récupère toutes les données, incluant les controllers
   Map<String, dynamic> getData() {
-    var map = {
-      ..._data,
-    };
-    for (var key in _controllers.keys) {
-      if (_controllers[key]?.text != null) {
-        map[key] = _controllers[key]!.text;
-      }
-    }
-
+    var map = {..._data};
+    _controllers.forEach((key, controller) {
+      map[key] = controller.text;
+    });
     return map;
   }
 
   void resetForm() {
     formKey.currentState?.reset();
+    _controllers.forEach((_, controller) => controller.clear());
   }
 
   void clearErrors() {
@@ -121,4 +113,7 @@ class MyFormValidator {
       this.errors[key] = value;
     });
   }
+
+  /// 🔹 Récupère tous les controllers (utile si tu veux lier aux TextFormField)
+  Map<String, TextEditingController> getAllControllers() => _controllers;
 }

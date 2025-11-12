@@ -21,16 +21,19 @@ class RegisterAccountScreen extends StatefulWidget {
 
 class _RegisterAccountScreenState extends State<RegisterAccountScreen>
     with SingleTickerProviderStateMixin, UIMixin {
-  late RegisterAccountController controller;
-  late OutlineInputBorder outlineInputBorder;
+  late final RegisterAccountController controller;
+  late final OutlineInputBorder outlineInputBorder;
 
   @override
   void initState() {
     super.initState();
-    controller = Get.put(RegisterAccountController(), tag: 'register_controller'); // Corrigé avec Get.put
+
+    controller = Get.put(RegisterAccountController(),
+        tag: 'register_controller', permanent: true);
+
     outlineInputBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8), // Ajouté borderRadius
-      borderSide: BorderSide(color: Color(0x3d6c757d)),
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: Color(0x3d6c757d)),
     );
   }
 
@@ -48,41 +51,36 @@ class _RegisterAccountScreenState extends State<RegisterAccountScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Logo
                   _buildLogo(),
-
-                  // Form fields
                   Expanded(
                     child: SingleChildScrollView(
-                      physics: BouncingScrollPhysics(),
+                      physics: const BouncingScrollPhysics(),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           MyText.titleMedium("Free Sign Up", fontWeight: 600),
                           MySpacing.height(8),
                           MyText.bodySmall(
-                            "Don't have an account? Create your account, it takes less than a minute",
+                            "Don't have an account? Create one, it takes less than a minute.",
                             muted: true,
                           ),
                           MySpacing.height(16),
-                          _buildEmailField(controller),
+                          _buildEmailField(),
                           MySpacing.height(12),
-                          _buildUsernameField(controller),
+                          _buildUsernameField(),
                           MySpacing.height(12),
-                          _buildPasswordField(controller),
+                          _buildPasswordField(),
                           MySpacing.height(12),
-                          _buildTermsCheckbox(controller),
+                          _buildTermsCheckbox(),
                           MySpacing.height(12),
-                          _buildSignUpBtn(controller),
+                          _buildSignUpBtn(),
                           MySpacing.height(20),
                           _buildSocialButtons(),
                         ],
                       ),
                     ),
                   ),
-
-                  // Already have account
-                  _buildLoginRedirect(controller),
+                  _buildLoginRedirect(),
                 ],
               ),
             ),
@@ -105,23 +103,72 @@ class _RegisterAccountScreenState extends State<RegisterAccountScreen>
     );
   }
 
-  Widget _buildEmailField(RegisterAccountController controller) {
-    final emailValidator = controller.basicValidator.getValidation<String>('email');
-    final emailController = controller.basicValidator.getController('email');
+  // ✅ ICI LES TROIS CHANGEMENTS :
+  Widget _buildEmailField() {
+    final validator = controller.basicValidator.getValidation<String>('email');
+    final textController = controller.basicValidator.getController('email');
+    return _buildTextField(
+      "Email",
+      "Enter your email",
+      textController,
+      validator,
+      TextInputType.emailAddress,
+      onChangeField: 'email',
+    );
+  }
 
+  Widget _buildUsernameField() {
+    final validator =
+        controller.basicValidator.getValidation<String>('username');
+    final textController = controller.basicValidator.getController('username');
+    return _buildTextField(
+      "Username",
+      "Enter your username",
+      textController,
+      validator,
+      TextInputType.text,
+      onChangeField: 'username',
+    );
+  }
+
+  Widget _buildPasswordField() {
+    final validator =
+        controller.basicValidator.getValidation<String>('password');
+    final textController = controller.basicValidator.getController('password');
+    return _buildTextField(
+      "Password",
+      "Enter your password",
+      textController,
+      validator,
+      TextInputType.text,
+      obscure: true,
+      onChangeField: 'password',
+    );
+  }
+
+  Widget _buildTextField(
+    String label,
+    String hint,
+    TextEditingController textController,
+    String? Function(String?)? validator,
+    TextInputType inputType, {
+    bool obscure = false,
+    required String onChangeField,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MyText.bodyMedium("Email", fontWeight: 600),
+        MyText.bodyMedium(label, fontWeight: 600),
         MySpacing.height(8),
         TextFormField(
-          controller: emailController,
-          validator: emailValidator,
-          keyboardType: TextInputType.emailAddress,
+          controller: textController,
+          validator: validator,
+          keyboardType: inputType,
+          obscureText: obscure,
           textInputAction: TextInputAction.next,
           style: MyTextStyle.bodySmall(fontWeight: 600, muted: true),
           decoration: InputDecoration(
-            hintText: "Enter your email",
+            hintText: hint,
             hintStyle: MyTextStyle.bodySmall(fontWeight: 600, muted: true),
             isDense: true,
             contentPadding: MySpacing.xy(12, 12),
@@ -131,111 +178,20 @@ class _RegisterAccountScreenState extends State<RegisterAccountScreen>
             ),
             enabledBorder: outlineInputBorder,
             errorBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
+              borderSide: const BorderSide(color: Colors.red, width: 1.5),
             ),
             focusedErrorBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
+              borderSide: const BorderSide(color: Colors.red, width: 1.5),
             ),
           ),
-          onChanged: (value) {
-            controller.clearFieldError('email');
-          },
-          onFieldSubmitted: (_) {
-            FocusScope.of(context).nextFocus();
-          },
+          onChanged: (_) => controller.clearFieldError(onChangeField),
+          onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
         ),
       ],
     );
   }
 
-  Widget _buildUsernameField(RegisterAccountController controller) {
-    final usernameValidator = controller.basicValidator.getValidation<String>('username');
-    final usernameController = controller.basicValidator.getController('username');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        MyText.bodyMedium("Username", fontWeight: 600),
-        MySpacing.height(8),
-        TextFormField(
-          controller: usernameController,
-          validator: usernameValidator,
-          textInputAction: TextInputAction.next,
-          style: MyTextStyle.bodySmall(fontWeight: 600, muted: true),
-          decoration: InputDecoration(
-            hintText: "Enter your username",
-            hintStyle: MyTextStyle.bodySmall(fontWeight: 600, muted: true),
-            isDense: true,
-            contentPadding: MySpacing.xy(12, 12),
-            border: outlineInputBorder,
-            focusedBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: contentTheme.primary, width: 1.5),
-            ),
-            enabledBorder: outlineInputBorder,
-            errorBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
-            ),
-            focusedErrorBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
-            ),
-          ),
-          onChanged: (value) {
-            controller.clearFieldError('username');
-          },
-          onFieldSubmitted: (_) {
-            FocusScope.of(context).nextFocus();
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPasswordField(RegisterAccountController controller) {
-    final passwordValidator = controller.basicValidator.getValidation<String>('password');
-    final passwordController = controller.basicValidator.getController('password');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        MyText.bodyMedium("Password", fontWeight: 600),
-        MySpacing.height(8),
-        TextFormField(
-          controller: passwordController,
-          validator: passwordValidator,
-          obscureText: true,
-          textInputAction: TextInputAction.done,
-          style: MyTextStyle.bodySmall(fontWeight: 600, muted: true),
-          decoration: InputDecoration(
-            hintText: "Enter your password",
-            hintStyle: MyTextStyle.bodySmall(fontWeight: 600, muted: true),
-            isDense: true,
-            contentPadding: MySpacing.xy(12, 12),
-            border: outlineInputBorder,
-            focusedBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: contentTheme.primary, width: 1.5),
-            ),
-            enabledBorder: outlineInputBorder,
-            errorBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
-            ),
-            focusedErrorBorder: outlineInputBorder.copyWith(
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
-            ),
-          ),
-          onChanged: (value) {
-            controller.clearFieldError('password');
-          },
-          onFieldSubmitted: (_) {
-            if (!controller.isLoading) {
-              controller.onRegister();
-            }
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTermsCheckbox(RegisterAccountController controller) {
+  Widget _buildTermsCheckbox() {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -243,13 +199,13 @@ class _RegisterAccountScreenState extends State<RegisterAccountScreen>
           data: ThemeData(unselectedWidgetColor: contentTheme.primary),
           child: Checkbox(
             value: controller.termAndConditions,
-            onChanged: (value) => controller.termAndConditionsToggle(),
+            onChanged: (_) => controller.termAndConditionsToggle(),
             activeColor: contentTheme.primary,
           ),
         ),
         Expanded(
           child: GestureDetector(
-            onTap: () => controller.termAndConditionsToggle(),
+            onTap: controller.termAndConditionsToggle,
             child: MyText.bodyMedium(
               "I accept Terms and Conditions",
               fontWeight: 600,
@@ -261,19 +217,19 @@ class _RegisterAccountScreenState extends State<RegisterAccountScreen>
     );
   }
 
-  Widget _buildSignUpBtn(RegisterAccountController controller) {
+  Widget _buildSignUpBtn() {
     return MyButton.block(
-      onPressed: controller.isLoading ? null : () => controller.onRegister(),
+      onPressed: controller.isLoading ? null : controller.onRegister,
       backgroundColor: contentTheme.primary,
       elevation: 0,
       borderRadius: BorderRadius.circular(8),
       child: controller.isLoading
-          ? SizedBox(
+          ? const SizedBox(
               height: 20,
               width: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(contentTheme.onPrimary),
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
               ),
             )
           : MyText.bodyMedium(
@@ -288,74 +244,59 @@ class _RegisterAccountScreenState extends State<RegisterAccountScreen>
     return Column(
       children: [
         Center(
-          child: MyText.titleMedium(
-            "Create account using",
-            fontWeight: 600,
-            muted: true,
-          ),
+          child: MyText.titleMedium("Create account using",
+              fontWeight: 600, muted: true),
         ),
         MySpacing.height(20),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            MyContainer.roundBordered(
-              onTap: () {},
-              paddingAll: 4,
-              borderColor: contentTheme.primary,
-              child: Icon(Remix.facebook_circle_fill,
-                  size: 18, color: contentTheme.primary),
-            ),
+            _socialButton(Remix.facebook_circle_fill, contentTheme.primary),
             MySpacing.width(12),
-            MyContainer.roundBordered(
-              onTap: () {},
-              paddingAll: 4,
-              borderColor: contentTheme.danger,
-              child: Icon(Remix.google_fill, size: 18, color: contentTheme.danger),
-            ),
+            _socialButton(Remix.google_fill, contentTheme.danger),
             MySpacing.width(12),
-            MyContainer.roundBordered(
-              onTap: () {},
-              paddingAll: 4,
-              borderColor: contentTheme.info,
-              child: Icon(Remix.twitter_fill, size: 18, color: contentTheme.info),
-            ),
+            _socialButton(Remix.twitter_fill, contentTheme.info),
             MySpacing.width(12),
-            MyContainer.roundBordered(
-              onTap: () {},
-              paddingAll: 4,
-              borderColor: contentTheme.secondary,
-              child: Icon(Remix.github_fill, size: 18, color: contentTheme.secondary),
-            ),
+            _socialButton(Remix.github_fill, contentTheme.secondary),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildLoginRedirect(RegisterAccountController controller) {
+  Widget _socialButton(IconData icon, Color color) {
+    return MyContainer.roundBordered(
+      onTap: () {},
+      paddingAll: 4,
+      borderColor: color,
+      child: Icon(icon, size: 18, color: color),
+    );
+  }
+
+  Widget _buildLoginRedirect() {
     return Container(
       padding: MySpacing.top(16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          MyText.bodyMedium(
-            "Already have account?",
-            fontWeight: 600,
-            muted: true,
-          ),
+          MyText.bodyMedium("Already have an account?",
+              fontWeight: 600, muted: true),
           MySpacing.width(8),
           GestureDetector(
-            onTap: controller.isLoading ? null : () => controller.gotoLogin(),
+            onTap: controller.isLoading ? null : controller.gotoLogin,
             child: MouseRegion(
-              cursor: controller.isLoading ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+              cursor: controller.isLoading
+                  ? SystemMouseCursors.forbidden
+                  : SystemMouseCursors.click,
               child: MyText.bodyMedium(
                 "Log in",
                 fontWeight: 600,
-                color: controller.isLoading ? Colors.grey : contentTheme.primary,
+                color:
+                    controller.isLoading ? Colors.grey : contentTheme.primary,
                 decoration: TextDecoration.underline,
               ),
             ),
-          )
+          ),
         ],
       ),
     );
