@@ -25,8 +25,9 @@ dependencies:
 
   ## URL
   url_launcher: ^6.3.0
-
   url_strategy: ^0.3.0
+
+  ## Editor & File Picker
   quill_html_editor: ^2.2.8
   file_picker: ^6.2.1
 

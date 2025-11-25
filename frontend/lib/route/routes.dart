@@ -10,6 +10,8 @@ import 'package:henox/view/auth/forgot_password_screen.dart';
 import 'package:henox/view/auth/confirm_mail_screen.dart';
 import 'package:henox/view/auth/lock_screen.dart';
 import 'package:henox/view/auth/log_out_screen.dart';
+import 'package:henox/view/products/product_list_screen.dart';
+import 'package:henox/view/products/product_form_screen.dart';
 
 import 'package:henox/view/dashboard/dashboard_screen.dart';
 import 'package:henox/view/dashboard/second_dashboard_screen.dart';
@@ -131,6 +133,10 @@ List<GetPage> getPageRoute() => [
       _protected(route.error404, () => Error404Screen()),
       _protected(route.error404Alt, () => Error404AltScreen()),
       _protected(route.error500, () => Error500Screen()),
+      // === Routes produits ===
+      _protected('/products', () => ProductListScreen()),
+      _protected('/products/create', () => ProductFormScreen()),
+      _protected('/products/edit/:id', () => ProductFormScreen()),
     ];
 
 GetPage _protected(String name, Widget Function() page) => GetPage(

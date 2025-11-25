@@ -13,6 +13,7 @@ import 'package:henox/route/routes_name.dart';
 import 'package:provider/provider.dart';
 import 'package:url_strategy/url_strategy.dart';
 import 'package:henox/helpers/services/auth_service.dart';
+import 'package:henox/controller/product_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,7 @@ Future<void> main() async {
   // 🔹 Initialisation de l’authentification
   await AuthService.init();
 
+  Get.put(ProductController());
   // 🔹 Lancement de l’app
   runApp(
     ChangeNotifierProvider<AppNotifier>(

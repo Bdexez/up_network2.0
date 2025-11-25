@@ -7,6 +7,7 @@ class RoutesName {
   final String confirmMail = '/auth/confirm_mail';
   final String dashboard = '/dashboard';
   final String dashboard2 = '/second_dashboard';
+  static const String products = '/products';
   final String calendar = '/calendar';
   final String chat = '/chat';
   final String emailInbox = '/email/inbox';
