@@ -1,8 +1,18 @@
 {
-  "dependencies": {
-    "pdfkit": "^0.17.2"
-  },
-  "devDependencies": {
-    "@types/pdfkit": "^0.17.3"
+  "name": "up-network-erp",
+  "private": true,
+  "description": "ERP / CRM — API NestJS + interface web React",
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "setup": "npm --prefix backend install && npm --prefix web install && npm run db:up && npm run db:migrate && npm run db:seed",
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "db:seed": "npm --prefix backend run seed",
+    "db:studio": "npm --prefix backend run db:studio",
+    "dev:api": "npm --prefix backend run start:dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix backend run build && npm --prefix web run build",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix web run typecheck",
+    "db:seed:fresh": "npm --prefix backend run seed:fresh"
   }
 }

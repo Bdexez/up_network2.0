@@ -1,130 +1,183 @@
 import {
+  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
-  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { Prisma } from '@prisma/client';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+
+const USER_SELECT = {
+  id: true,
+  email: true,
+  username: true,
+  firstName: true,
+  lastName: true,
+  userType: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  // 🔹 Créer un utilisateur - CORRIGÉ
-  async create(data: {
-    email: string;
-    username: string;
-    password: string;
-    userType?: string; // Ajouté userType
-  }) {
-    // Vérifier si l'email existe déjà
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: data.email },
-    });
+  /** Crée un utilisateur et le rattache directement à la société active. */
+  async create(companyId: number, data: CreateUserDto) {
+    const [emailTaken, usernameTaken] = await Promise.all([
+      this.prisma.user.findUnique({ where: { email: data.email } }),
+      this.prisma.user.findUnique({ where: { username: data.username } }),
+    ]);
+    if (emailTaken) throw new ConflictException('Cet email est déjà utilisé');
+    if (usernameTaken)
+      throw new ConflictException("Ce nom d'utilisateur est déjà pris");
 
-    if (existingUser) {
-      throw new ConflictException('Email already exists');
-    }
+    await this.assertRole(companyId, data.roleId);
 
     const passwordHash = await bcrypt.hash(data.password, 10);
 
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         email: data.email,
         username: data.username,
         passwordHash,
-        userType: data.userType || 'internal', // Valeur par défaut
-        isActive: true,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        isActive: data.isActive ?? true,
+        userCompanies: {
+          create: { companyId, roleId: data.roleId, isDefault: true },
+        },
+      },
+      select: USER_SELECT,
+    });
+
+    return this.findOne(companyId, user.id);
+  }
+
+  /** Ne liste que les membres de la société active. */
+  async findAll(companyId: number) {
+    const links = await this.prisma.userCompany.findMany({
+      where: { companyId },
+      include: {
+        user: { select: USER_SELECT },
+        role: { select: { id: true, name: true } },
+      },
+      orderBy: { assignedAt: 'asc' },
+    });
+
+    return links.map((link) => ({ ...link.user, role: link.role }));
+  }
+
+  async findOne(companyId: number, id: number) {
+    const link = await this.prisma.userCompany.findUnique({
+      where: { userId_companyId: { userId: id, companyId } },
+      include: {
+        user: { select: USER_SELECT },
+        role: { select: { id: true, name: true } },
       },
     });
+    if (!link) throw new NotFoundException('Utilisateur introuvable');
+    return { ...link.user, role: link.role };
   }
 
-  // 🔹 Récupérer tous les utilisateurs
-  async findAll() {
-    return this.prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        userType: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-  }
+  async update(companyId: number, id: number, data: UpdateUserDto) {
+    await this.findOne(companyId, id);
+    await this.assertRole(companyId, data.roleId);
 
-  // 🔹 Récupérer un utilisateur précis
-  async findOne(id: number) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException(`Utilisateur ${id} introuvable`);
-    return user;
-  }
-
-  // 🔹 Trouver un utilisateur par email
-  async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email },
-    });
-  }
-
-  // 🔹 Mettre à jour un utilisateur
-  async update(
-    id: number,
-    data: {
-      email?: string;
-      username?: string;
-      password?: string;
-      userType?: string;
-      isActive?: boolean;
-    },
-  ) {
-    const existingUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!existingUser)
-      throw new NotFoundException(`Utilisateur ${id} introuvable`);
-
-    // Vérifier si le nouvel email existe déjà
-    if (data.email && data.email !== existingUser.email) {
-      const emailExists = await this.prisma.user.findUnique({
-        where: { email: data.email },
+    if (data.email) {
+      const taken = await this.prisma.user.findFirst({
+        where: { email: data.email, id: { not: id } },
+        select: { id: true },
       });
-      if (emailExists) {
-        throw new ConflictException('Email already exists');
+      if (taken) throw new ConflictException('Cet email est déjà utilisé');
+    }
+
+    if (data.username) {
+      const taken = await this.prisma.user.findFirst({
+        where: { username: data.username, id: { not: id } },
+        select: { id: true },
+      });
+      if (taken)
+        throw new ConflictException("Ce nom d'utilisateur est déjà pris");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: {
+          email: data.email,
+          username: data.username,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          isActive: data.isActive,
+          ...(data.password
+            ? { passwordHash: await bcrypt.hash(data.password, 10) }
+            : {}),
+        },
+      });
+
+      if (data.roleId !== undefined) {
+        await tx.userCompany.update({
+          where: { userId_companyId: { userId: id, companyId } },
+          data: { roleId: data.roleId },
+        });
       }
-    }
-
-    const updateData: {
-      email?: string;
-      username?: string;
-      userType?: string;
-      passwordHash?: string;
-      isActive?: boolean;
-    } = {};
-
-    if (typeof data.email === 'string') updateData.email = data.email;
-    if (typeof data.username === 'string') updateData.username = data.username;
-    if (typeof data.userType === 'string') updateData.userType = data.userType;
-    if (typeof data.isActive === 'boolean') updateData.isActive = data.isActive;
-
-    if (typeof data.password === 'string' && data.password.length > 0) {
-      const hashed = await bcrypt.hash(data.password, 10);
-      updateData.passwordHash = hashed;
-    }
-
-    return this.prisma.user.update({
-      where: { id },
-      data: updateData as Prisma.UserUpdateInput,
     });
+
+    return this.findOne(companyId, id);
   }
 
-  // 🔹 Supprimer un utilisateur
-  async delete(id: number) {
-    const existingUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!existingUser)
-      throw new NotFoundException(`Utilisateur ${id} introuvable`);
+  /**
+   * Retire l'utilisateur de la société active. Le compte n'est supprimé
+   * que s'il n'appartient plus à aucune société.
+   */
+  async remove(companyId: number, currentUserId: number, id: number) {
+    if (id === currentUserId) {
+      throw new BadRequestException(
+        'Vous ne pouvez pas retirer votre propre compte',
+      );
+    }
 
-    await this.prisma.user.delete({ where: { id } });
-    return { message: `Utilisateur ${id} supprimé avec succès` };
+    await this.findOne(companyId, id);
+
+    await this.prisma.userCompany.delete({
+      where: { userId_companyId: { userId: id, companyId } },
+    });
+
+    const remaining = await this.prisma.userCompany.count({
+      where: { userId: id },
+    });
+
+    if (remaining === 0) {
+      const hasOrders = await this.prisma.order.count({
+        where: { createdById: id },
+      });
+      if (hasOrders > 0) {
+        // On garde le compte pour ne pas casser l'historique des commandes.
+        await this.prisma.user.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        return { message: `Utilisateur ${id} désactivé`, deleted: false };
+      }
+      await this.prisma.user.delete({ where: { id } });
+      return { message: `Utilisateur ${id} supprimé`, deleted: true };
+    }
+
+    return { message: `Utilisateur ${id} retiré de la société`, deleted: false };
+  }
+
+  private async assertRole(companyId: number, roleId?: number) {
+    if (roleId === undefined) return;
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, companyId },
+      select: { id: true },
+    });
+    if (!role) {
+      throw new NotFoundException("Ce rôle n'existe pas dans cette société");
+    }
   }
 }

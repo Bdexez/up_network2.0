@@ -1,54 +1,34 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Put,
-  UseGuards,
-} from '@nestjs/common';
-import { CompaniesService } from './companies.service';
+import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
+import {
+  CompanyId,
+  CurrentUser,
+} from 'src/common/decorators/current-user.decorator';
+import { CompaniesService } from './companies.service';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
 @Controller('companies')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class CompaniesController {
   constructor(private companiesService: CompaniesService) {}
 
-  @Post()
-  @RequirePermission('system', 'companies', 'create')
-  create(@Body() body: { name: string; code: string }) {
-    return this.companiesService.create(body.name, body.code);
+  /** Sociétés accessibles au compte connecté (sélecteur de société). */
+  @Get('mine')
+  findMine(@CurrentUser('userId') userId: number) {
+    return this.companiesService.findMine(userId);
   }
 
-  @Get()
+  @Get('current')
   @RequirePermission('system', 'companies', 'read')
-  findAll() {
-    return this.companiesService.findAll();
+  findActive(@CompanyId() companyId: number) {
+    return this.companiesService.findActive(companyId);
   }
 
-  @Get(':id')
-  @RequirePermission('system', 'companies', 'read')
-  findOne(@Param('id') id: string) {
-    return this.companiesService.findOne(Number(id));
-  }
-
-  // --- AJOUTER LA ROUTE PUT ---
-  @Put(':id')
+  @Patch('current')
   @RequirePermission('system', 'companies', 'update')
-  update(
-    @Param('id') id: string,
-    @Body() body: { name?: string; code?: string; isActive?: boolean },
-  ) {
-    return this.companiesService.update(Number(id), body);
-  }
-
-  @Delete(':id')
-  @RequirePermission('system', 'companies', 'delete')
-  delete(@Param('id') id: string) {
-    return this.companiesService.delete(Number(id));
+  update(@CompanyId() companyId: number, @Body() dto: UpdateCompanyDto) {
+    return this.companiesService.update(companyId, dto);
   }
 }

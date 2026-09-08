@@ -4,15 +4,16 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
+import { CompanyId } from 'src/common/decorators/current-user.decorator';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -24,37 +25,41 @@ export class ProductsController {
 
   @Post()
   @RequirePermission('stock', 'products', 'create')
-  create(@Body() dto: CreateProductDto) {
-    return this.productsService.create(dto);
+  create(@CompanyId() companyId: number, @Body() dto: CreateProductDto) {
+    return this.productsService.create(companyId, dto);
   }
 
   @Get()
   @RequirePermission('stock', 'products', 'read')
-  findAll(@Query('companyId') companyId: string) {
-    const companyIdNumber = Number(companyId);
-    if (!companyId || isNaN(companyIdNumber)) {
-      throw new BadRequestException(
-        'Le paramètre companyId doit être fourni et être un nombre',
-      );
-    }
-    return this.productsService.findAll(companyIdNumber);
+  findAll(@CompanyId() companyId: number, @Query('search') search?: string) {
+    return this.productsService.findAll(companyId, search);
   }
 
   @Get(':id')
   @RequirePermission('stock', 'products', 'read')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(Number(id));
+  findOne(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.productsService.findOne(companyId, id);
   }
 
   @Patch(':id')
   @RequirePermission('stock', 'products', 'update')
-  update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
-    return this.productsService.update(Number(id), dto);
+  update(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateProductDto,
+  ) {
+    return this.productsService.update(companyId, id, dto);
   }
 
   @Delete(':id')
   @RequirePermission('stock', 'products', 'delete')
-  remove(@Param('id') id: string) {
-    return this.productsService.remove(Number(id));
+  remove(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.productsService.remove(companyId, id);
   }
 }

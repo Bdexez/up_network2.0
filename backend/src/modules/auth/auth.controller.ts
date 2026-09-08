@@ -4,23 +4,16 @@ import {
   Body,
   UseGuards,
   Get,
-  Request,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { SwitchCompanyDto } from './dto/switch-company.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-
-// 🔥 Interface locale pour la requête authentifiée
-interface AuthenticatedRequest extends Express.Request {
-  user: {
-    userId: number;
-    email: string;
-    username: string;
-  };
-}
+import { CurrentUser, CompanyId } from 'src/common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from 'src/common/types/authenticated-request';
 
 @Controller('auth')
 export class AuthController {
@@ -28,20 +21,32 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  async getProfile(@Request() req: AuthenticatedRequest) {
-    // 🔥 Typage explicite
-    return this.authService.getProfile(req.user.userId);
+  getProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @CompanyId() companyId: number,
+  ) {
+    return this.authService.getProfile(user.userId, companyId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('switch-company')
+  @HttpCode(HttpStatus.OK)
+  switchCompany(
+    @CurrentUser('userId') userId: number,
+    @Body() dto: SwitchCompanyDto,
+  ) {
+    return this.authService.switchCompany(userId, dto.companyId);
   }
 }

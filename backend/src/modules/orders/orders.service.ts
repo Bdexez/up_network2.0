@@ -1,111 +1,145 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+
+const ORDER_INCLUDE = {
+  partner: true,
+  items: { include: { product: true } },
+  invoice: true,
+  createdBy: { select: { id: true, username: true, email: true } },
+} as const;
 
 @Injectable()
 export class OrdersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: CreateOrderDto) {
-    const partner = await this.prisma.partner.findUnique({
-      where: { id: data.partnerId },
-    });
-    if (!partner) throw new NotFoundException('Client introuvable');
-
-    // Vérifie tous les produits
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: data.items.map((i) => i.productId) } },
-    });
-
-    if (products.length !== data.items.length) {
-      throw new NotFoundException('Un ou plusieurs produits sont introuvables');
-    }
-
-    // Calcule le total
-    const total = data.items.reduce((acc, item) => {
-      const product = products.find((p) => p.id === item.productId);
-      return acc + (product?.price || 0) * item.quantity;
-    }, 0);
+  async create(companyId: number, createdById: number, data: CreateOrderDto) {
+    await this.assertPartner(companyId, data.partnerId);
+    const priced = await this.priceItems(companyId, data.items);
 
     return this.prisma.order.create({
       data: {
-        companyId: data.companyId,
+        companyId,
         partnerId: data.partnerId,
-        createdById: data.createdById,
-        total,
-        items: {
-          create: data.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: products.find((p) => p.id === item.productId)?.price ?? 0,
-          })),
-        },
+        createdById,
+        total: priced.total,
+        items: { create: priced.lines },
       },
-      include: { items: { include: { product: true } }, partner: true },
+      include: ORDER_INCLUDE,
     });
   }
 
-  async findAll(companyId: number) {
+  findAll(companyId: number) {
     return this.prisma.order.findMany({
       where: { companyId },
-      include: { partner: true, items: { include: { product: true } } },
+      include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: number) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: { partner: true, items: { include: { product: true } } },
+  async findOne(companyId: number, id: number) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, companyId },
+      include: ORDER_INCLUDE,
     });
     if (!order) throw new NotFoundException('Commande introuvable');
     return order;
   }
 
-  async update(id: number, data: UpdateOrderDto) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!order) throw new NotFoundException('Commande introuvable');
+  async update(companyId: number, id: number, data: UpdateOrderDto) {
+    const order = await this.findOne(companyId, id);
 
-    let total = order.total;
+    if (order.invoice) {
+      throw new ConflictException(
+        'Commande déjà facturée : elle ne peut plus être modifiée',
+      );
+    }
 
-    if (data.items && data.items.length > 0) {
-      const products = await this.prisma.product.findMany({
-        where: { id: { in: data.items.map((i) => i.productId) } },
-      });
-      total = data.items.reduce((acc, item) => {
-        const product = products.find((p) => p.id === item.productId);
-        return acc + (product?.price || 0) * item.quantity;
-      }, 0);
+    if (data.partnerId) {
+      await this.assertPartner(companyId, data.partnerId);
+    }
 
-      await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
-      await this.prisma.orderItem.createMany({
-        data: data.items.map((item) => ({
-          orderId: id,
-          productId: item.productId,
-          quantity: item.quantity,
-          price: products.find((p) => p.id === item.productId)?.price ?? 0,
-        })),
+    // Sans nouvelles lignes, le total reste celui déjà calculé.
+    if (!data.items) {
+      return this.prisma.order.update({
+        where: { id },
+        data: { partnerId: data.partnerId ?? order.partnerId },
+        include: ORDER_INCLUDE,
       });
     }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        total,
-        partnerId: data.partnerId ?? order.partnerId,
-      },
-      include: { items: { include: { product: true } }, partner: true },
+    const priced = await this.priceItems(companyId, data.items);
+
+    // Lignes + total réécrits d'un bloc : jamais de total désynchronisé.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.orderItem.deleteMany({ where: { orderId: id } });
+      await tx.orderItem.createMany({
+        data: priced.lines.map((line) => ({ ...line, orderId: id })),
+      });
+      return tx.order.update({
+        where: { id },
+        data: {
+          total: priced.total,
+          partnerId: data.partnerId ?? order.partnerId,
+        },
+        include: ORDER_INCLUDE,
+      });
     });
   }
 
-  async remove(id: number) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
-    if (!order) throw new NotFoundException('Commande introuvable');
-    await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
-    return this.prisma.order.delete({ where: { id } });
+  async remove(companyId: number, id: number) {
+    const order = await this.findOne(companyId, id);
+    if (order.invoice) {
+      throw new ConflictException(
+        'Commande déjà facturée : supprimez d’abord la facture',
+      );
+    }
+    await this.prisma.order.delete({ where: { id } });
+    return { message: `Commande ${id} supprimée` };
+  }
+
+  // -------------------------------------------------------------------------
+
+  /** Valorise les lignes au prix courant du catalogue de la société. */
+  private async priceItems(companyId: number, items: OrderItemDto[]) {
+    const productIds = [...new Set(items.map((i) => i.productId))];
+
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, companyId },
+    });
+
+    if (products.length !== productIds.length) {
+      throw new NotFoundException(
+        'Un ou plusieurs produits sont introuvables dans cette société',
+      );
+    }
+
+    const priceById = new Map(products.map((p) => [p.id, p.price]));
+
+    const lines = items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      price: priceById.get(item.productId) as number,
+    }));
+
+    const total = lines.reduce(
+      (acc, line) => acc + line.price * line.quantity,
+      0,
+    );
+
+    return { lines, total: Math.round(total * 100) / 100 };
+  }
+
+  private async assertPartner(companyId: number, partnerId: number) {
+    const partner = await this.prisma.partner.findFirst({
+      where: { id: partnerId, companyId },
+      select: { id: true },
+    });
+    if (!partner) throw new NotFoundException('Client introuvable');
   }
 }

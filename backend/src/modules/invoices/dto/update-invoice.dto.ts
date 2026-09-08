@@ -1,16 +1,8 @@
-// src/modules/invoices/dto/update-invoice.dto.ts
-import { IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsOptional, Min } from 'class-validator';
 
 export class UpdateInvoiceDto {
   @IsOptional()
-  @IsInt()
-  orderId?: number;
-
-  @IsOptional()
   @IsNumber()
+  @Min(0)
   total?: number;
-
-  @IsOptional()
-  @IsString()
-  pdfUrl?: string;
 }

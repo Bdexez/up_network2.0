@@ -7,33 +7,45 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------------------------
+// Coeur : multi-société, utilisateurs, rôles & permissions
+// ---------------------------------------------------------------------------
+
 model Company {
-  id        Int           @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String
-  code      String        @unique
-  isActive  Boolean       @default(true)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  roles     Role[]
-  users     UserCompany[]
-  Partner   Partner[]
-  Product   Product[]
-  Order     Order[]
+  code      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles         Role[]
+  users         UserCompany[]
+  partners      Partner[]
+  products      Product[]
+  orders        Order[]
+  leads         Lead[]
+  opportunities Opportunity[]
+  activities    Activity[]
 }
 
 model User {
-  id            Int           @id @default(autoincrement())
-  email         String        @unique
-  username      String        @unique
-  passwordHash  String
-  firstName     String?
-  lastName      String?
-  userType      String        @default("internal")
-  isActive      Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  userCompanies UserCompany[]
-  Order         Order[]
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  userType     String   @default("internal")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userCompanies      UserCompany[]
+  orders             Order[]
+  ownedLeads         Lead[]        @relation("LeadOwner")
+  ownedOpportunities Opportunity[] @relation("OpportunityOwner")
+  ownedActivities    Activity[]    @relation("ActivityOwner")
 }
 
 model Role {
@@ -44,7 +56,7 @@ model Role {
   isSystemRole  Boolean          @default(false)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
-  company       Company          @relation(fields: [companyId], references: [id])
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   permissions   RolePermission[]
   userCompanies UserCompany[]
 
@@ -68,8 +80,8 @@ model RolePermission {
   roleId       Int
   permissionId Int
   granted      Boolean    @default(true)
-  permission   Permission @relation(fields: [permissionId], references: [id])
-  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
 }
@@ -81,37 +93,62 @@ model UserCompany {
   roleId     Int?
   isDefault  Boolean  @default(false)
   assignedAt DateTime @default(now())
-  company    Company  @relation(fields: [companyId], references: [id])
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   role       Role?    @relation(fields: [roleId], references: [id])
-  user       User     @relation(fields: [userId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, companyId])
 }
 
+// ---------------------------------------------------------------------------
+// Tiers, catalogue, ventes
+// ---------------------------------------------------------------------------
+
+enum PartnerType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+}
+
 model Partner {
-  id        Int      @id @default(autoincrement())
+  id        Int         @id @default(autoincrement())
   name      String
+  type      PartnerType @default(CUSTOMER)
   email     String?
   phone     String?
   address   String?
+  city      String?
+  country   String?
+  website   String?
+  isActive  Boolean     @default(true)
   companyId Int
-  company   Company  @relation(fields: [companyId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  Order     Order[]
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  orders        Order[]
+  opportunities Opportunity[]
+  activities    Activity[]
+  leads         Lead[]
+
+  @@index([companyId])
 }
 
 model Product {
   id          Int         @id @default(autoincrement())
   name        String
-  sku         String      @unique
+  sku         String
   description String?
   price       Float
   companyId   Int
-  company     Company     @relation(fields: [companyId], references: [id])
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  OrderItem   OrderItem[]
+  orderItems  OrderItem[]
+
+  // Le SKU est unique par société, pas globalement.
+  @@unique([companyId, sku])
+  @@index([companyId])
 }
 
 model Order {
@@ -120,13 +157,15 @@ model Order {
   partnerId   Int
   total       Float       @default(0)
   createdById Int
-  company     Company     @relation(fields: [companyId], references: [id])
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   partner     Partner     @relation(fields: [partnerId], references: [id])
   createdBy   User        @relation(fields: [createdById], references: [id])
   items       OrderItem[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  Invoice     Invoice?
+  invoice     Invoice?
+
+  @@index([companyId])
 }
 
 model OrderItem {
@@ -135,7 +174,7 @@ model OrderItem {
   productId Int
   quantity  Int
   price     Float
-  order     Order   @relation(fields: [orderId], references: [id])
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id])
 }
 
@@ -144,6 +183,133 @@ model Invoice {
   orderId   Int      @unique
   total     Float
   pdfUrl    String?
-  order     Order    @relation(fields: [orderId], references: [id])
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Addon CRM : pistes, opportunités, activités
+// ---------------------------------------------------------------------------
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  CONVERTED
+}
+
+enum OpportunityStage {
+  QUALIFICATION
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum ActivityType {
+  CALL
+  MEETING
+  EMAIL
+  TASK
+  NOTE
+}
+
+enum ActivityStatus {
+  PLANNED
+  DONE
+  CANCELLED
+}
+
+model Lead {
+  id             Int        @id @default(autoincrement())
+  name           String
+  companyName    String?
+  contactName    String?
+  email          String?
+  phone          String?
+  source         String?
+  status         LeadStatus @default(NEW)
+  estimatedValue Float      @default(0)
+  description    String?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  ownerId Int?
+  owner   User? @relation("LeadOwner", fields: [ownerId], references: [id])
+
+  // Renseignés lors de la conversion piste -> client
+  convertedPartnerId Int?
+  convertedPartner   Partner?  @relation(fields: [convertedPartnerId], references: [id])
+  convertedAt        DateTime?
+
+  opportunities Opportunity[]
+  activities    Activity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
+}
+
+model Opportunity {
+  id                Int              @id @default(autoincrement())
+  name              String
+  description       String?
+  stage             OpportunityStage @default(QUALIFICATION)
+  amount            Float            @default(0)
+  probability       Int              @default(10)
+  expectedCloseDate DateTime?
+  closedAt          DateTime?
+  lostReason        String?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  partnerId Int?
+  partner   Partner? @relation(fields: [partnerId], references: [id])
+
+  leadId Int?
+  lead   Lead? @relation(fields: [leadId], references: [id])
+
+  ownerId Int?
+  owner   User? @relation("OpportunityOwner", fields: [ownerId], references: [id])
+
+  activities Activity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, stage])
+}
+
+model Activity {
+  id          Int            @id @default(autoincrement())
+  type        ActivityType   @default(TASK)
+  subject     String
+  description String?
+  status      ActivityStatus @default(PLANNED)
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  ownerId Int?
+  owner   User? @relation("ActivityOwner", fields: [ownerId], references: [id])
+
+  leadId Int?
+  lead   Lead? @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  opportunityId Int?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  partnerId Int?
+  partner   Partner? @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, status])
 }

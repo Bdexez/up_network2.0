@@ -2,22 +2,22 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Patch,
   Delete,
   UseGuards,
   Res,
-  NotFoundException,
   Body,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
+import { CompanyId } from 'src/common/decorators/current-user.decorator';
 import { InvoicesService } from './invoices.service';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import type { Response } from 'express';
 import * as fs from 'fs';
-import * as path from 'path';
 
 @Controller('invoices')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
@@ -26,53 +26,67 @@ export class InvoicesController {
 
   @Post('generate/:orderId')
   @RequirePermission('sales', 'invoices', 'create')
-  generate(@Param('orderId') orderId: string) {
-    return this.invoicesService.generate(Number(orderId));
+  generate(
+    @CompanyId() companyId: number,
+    @Param('orderId', ParseIntPipe) orderId: number,
+  ) {
+    return this.invoicesService.generate(companyId, orderId);
   }
 
   @Get()
   @RequirePermission('sales', 'invoices', 'read')
-  findAll() {
-    return this.invoicesService.findAll();
+  findAll(@CompanyId() companyId: number) {
+    return this.invoicesService.findAll(companyId);
   }
 
-  @Get(':id')
+  // Déclaré avant `:id` n'est plus nécessaire (le segment est distinct),
+  // mais on garde le téléchargement sous l'id pour éviter toute ambiguïté.
+  @Get(':id/pdf')
   @RequirePermission('sales', 'invoices', 'read')
-  findOne(@Param('id') id: string) {
-    return this.invoicesService.findOne(Number(id));
-  }
-
-  @Patch(':id')
-  @RequirePermission('sales', 'invoices', 'update')
-  update(@Param('id') id: string, @Body() dto: UpdateInvoiceDto) {
-    return this.invoicesService.update(Number(id), dto);
-  }
-
-  @Delete(':id')
-  @RequirePermission('sales', 'invoices', 'delete')
-  remove(@Param('id') id: string) {
-    return this.invoicesService.remove(Number(id));
-  }
-
-  @Get('download/:id')
-  @RequirePermission('sales', 'invoices', 'read')
-  async download(@Param('id') id: string, @Res() res: Response) {
-    const invoice = await this.invoicesService.findOne(Number(id));
-    if (!invoice) throw new NotFoundException('Facture introuvable');
-
-    const pdfUrl = invoice.pdfUrl;
-    if (!pdfUrl) throw new NotFoundException('Aucun fichier PDF associé');
-
-    const filePath = path.resolve(pdfUrl);
-    if (!fs.existsSync(filePath))
-      throw new NotFoundException('Fichier PDF introuvable');
+  async download(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    const { filePath, fileName } = await this.invoicesService.getPdfPath(
+      companyId,
+      id,
+    );
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="invoice_${invoice.orderId}.pdf"`,
+      `attachment; filename="${fileName}"`,
     );
 
     fs.createReadStream(filePath).pipe(res);
+  }
+
+  @Get(':id')
+  @RequirePermission('sales', 'invoices', 'read')
+  findOne(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.invoicesService.findOne(companyId, id);
+  }
+
+  @Patch(':id')
+  @RequirePermission('sales', 'invoices', 'update')
+  update(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateInvoiceDto,
+  ) {
+    return this.invoicesService.update(companyId, id, dto);
+  }
+
+  @Delete(':id')
+  @RequirePermission('sales', 'invoices', 'delete')
+  remove(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.invoicesService.remove(companyId, id);
   }
 }

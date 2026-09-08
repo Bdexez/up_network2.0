@@ -1,4 +1,3 @@
-// src/modules/auth/dto/register.dto.ts
 import {
   IsEmail,
   IsString,
@@ -22,9 +21,26 @@ export class RegisterDto {
 
   @IsOptional()
   @IsString()
-  userType?: string;
+  firstName?: string;
 
-  // SUPPRIMEZ companyId s'il existe
-  // @IsNumber()
-  // companyId: number;
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  /**
+   * Nom de la société à créer. Si omis, on dérive un nom depuis le username.
+   * Ignoré quand `companyCode` est fourni.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  companyName?: string;
+
+  /**
+   * Code d'une société existante à rejoindre. L'utilisateur y entre alors
+   * sans rôle : un admin devra lui en attribuer un.
+   */
+  @IsOptional()
+  @IsString()
+  companyCode?: string;
 }

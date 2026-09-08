@@ -4,15 +4,16 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
+import { CompanyId } from 'src/common/decorators/current-user.decorator';
 import { PartnersService } from './partners.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { UpdatePartnerDto } from './dto/update-partner.dto';
@@ -24,36 +25,41 @@ export class PartnersController {
 
   @Post()
   @RequirePermission('crm', 'partners', 'create')
-  create(@Body() dto: CreatePartnerDto) {
-    return this.partnersService.create(dto);
+  create(@CompanyId() companyId: number, @Body() dto: CreatePartnerDto) {
+    return this.partnersService.create(companyId, dto);
   }
 
   @Get()
   @RequirePermission('crm', 'partners', 'read')
-  findAll(@Query('companyId') companyId: string) {
-    // On convertit en number et on suppose que companyId est toujours fourni
-    const id = Number(companyId);
-    if (Number.isNaN(id)) {
-      throw new BadRequestException('companyId invalide');
-    }
-    return this.partnersService.findAll(id); // toujours un number
+  findAll(@CompanyId() companyId: number, @Query('search') search?: string) {
+    return this.partnersService.findAll(companyId, search);
   }
 
   @Get(':id')
   @RequirePermission('crm', 'partners', 'read')
-  findOne(@Param('id') id: string) {
-    return this.partnersService.findOne(Number(id));
+  findOne(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.partnersService.findOne(companyId, id);
   }
 
   @Patch(':id')
   @RequirePermission('crm', 'partners', 'update')
-  update(@Param('id') id: string, @Body() dto: UpdatePartnerDto) {
-    return this.partnersService.update(Number(id), dto);
+  update(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePartnerDto,
+  ) {
+    return this.partnersService.update(companyId, id, dto);
   }
 
   @Delete(':id')
   @RequirePermission('crm', 'partners', 'delete')
-  remove(@Param('id') id: string) {
-    return this.partnersService.remove(Number(id));
+  remove(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.partnersService.remove(companyId, id);
   }
 }

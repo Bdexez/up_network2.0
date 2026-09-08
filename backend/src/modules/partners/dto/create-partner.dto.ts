@@ -1,8 +1,21 @@
-import { IsEmail, IsInt, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
+import { PartnerType } from '@prisma/client';
 
 export class CreatePartnerDto {
   @IsString()
+  @MaxLength(120)
   name: string;
+
+  @IsOptional()
+  @IsEnum(PartnerType)
+  type?: PartnerType;
 
   @IsOptional()
   @IsEmail()
@@ -12,6 +25,23 @@ export class CreatePartnerDto {
   @IsString()
   phone?: string;
 
-  @IsInt()
-  companyId: number;
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

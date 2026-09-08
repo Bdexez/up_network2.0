@@ -1,44 +1,53 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { UpdateCompanyDto } from './dto/update-company.dto';
 
 @Injectable()
 export class CompaniesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(name: string, code: string) {
-    return this.prisma.company.create({
-      data: { name, code },
+  /** Uniquement les sociétés auxquelles l'utilisateur est rattaché. */
+  async findMine(userId: number) {
+    const links = await this.prisma.userCompany.findMany({
+      where: { userId },
+      include: {
+        company: true,
+        role: { select: { id: true, name: true } },
+      },
+      orderBy: { assignedAt: 'asc' },
     });
+
+    return links.map((link) => ({
+      ...link.company,
+      role: link.role,
+      isDefault: link.isDefault,
+    }));
   }
 
-  async findAll() {
-    return this.prisma.company.findMany({
-      include: { users: true, roles: true },
-    });
-  }
-
-  async findOne(id: number) {
+  /** Fiche de la société active, avec ses compteurs. */
+  async findActive(companyId: number) {
     const company = await this.prisma.company.findUnique({
-      where: { id },
-      include: { users: { include: { user: true, role: true } } },
+      where: { id: companyId },
+      include: {
+        _count: {
+          select: {
+            users: true,
+            roles: true,
+            partners: true,
+            products: true,
+            orders: true,
+            leads: true,
+            opportunities: true,
+          },
+        },
+      },
     });
-    if (!company) throw new NotFoundException('Entreprise introuvable');
+    if (!company) throw new NotFoundException('Société introuvable');
     return company;
   }
 
-  async update(
-    id: number,
-    data: { name?: string; code?: string; isActive?: boolean },
-  ) {
-    return this.prisma.company.update({
-      where: { id },
-      data,
-    });
-  }
-
-  async delete(id: number) {
-    return this.prisma.company.delete({
-      where: { id },
-    });
+  async update(companyId: number, data: UpdateCompanyDto) {
+    await this.findActive(companyId);
+    return this.prisma.company.update({ where: { id: companyId }, data });
   }
 }

@@ -1,8 +1,5 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { UpdatePartnerDto } from './dto/update-partner.dto';
@@ -11,47 +8,74 @@ import { UpdatePartnerDto } from './dto/update-partner.dto';
 export class PartnersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: CreatePartnerDto) {
-    if (!data.companyId) {
-      throw new BadRequestException(
-        'companyId est requis pour créer un partenaire',
-      );
-    }
-
-    return this.prisma.partner.create({ data });
+  create(companyId: number, data: CreatePartnerDto) {
+    return this.prisma.partner.create({ data: { ...data, companyId } });
   }
 
-  async findAll(companyId: number) {
-    if (!companyId) {
-      throw new BadRequestException(
-        'companyId est requis pour récupérer les partenaires',
-      );
+  findAll(companyId: number, search?: string) {
+    const where: Prisma.PartnerWhereInput = { companyId };
+
+    if (search?.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { city: { contains: q, mode: 'insensitive' } },
+      ];
     }
 
     return this.prisma.partner.findMany({
-      where: { companyId },
+      where,
       orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { orders: true, opportunities: true } } },
     });
   }
 
-  async findOne(id: number) {
-    const partner = await this.prisma.partner.findUnique({ where: { id } });
-    if (!partner) throw new NotFoundException('Partenaire introuvable');
+  async findOne(companyId: number, id: number) {
+    const partner = await this.prisma.partner.findFirst({
+      where: { id, companyId },
+      include: {
+        orders: { orderBy: { createdAt: 'desc' }, take: 10 },
+        opportunities: { orderBy: { createdAt: 'desc' }, take: 10 },
+        activities: { orderBy: { createdAt: 'desc' }, take: 10 },
+      },
+    });
+    if (!partner) throw new NotFoundException('Client introuvable');
     return partner;
   }
 
-  async update(id: number, data: UpdatePartnerDto) {
-    const partner = await this.prisma.partner.findUnique({ where: { id } });
-    if (!partner) throw new NotFoundException('Partenaire introuvable');
-
+  async update(companyId: number, id: number, data: UpdatePartnerDto) {
+    await this.assertExists(companyId, id);
     return this.prisma.partner.update({ where: { id }, data });
   }
 
-  async remove(id: number) {
-    const partner = await this.prisma.partner.findUnique({ where: { id } });
-    if (!partner) throw new NotFoundException('Partenaire introuvable');
+  async remove(companyId: number, id: number) {
+    await this.assertExists(companyId, id);
+
+    const ordersCount = await this.prisma.order.count({
+      where: { partnerId: id },
+    });
+    if (ordersCount > 0) {
+      // On archive plutôt que de casser l'historique des commandes.
+      await this.prisma.partner.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      return {
+        message: `Client ${id} archivé (${ordersCount} commande(s) liée(s))`,
+        archived: true,
+      };
+    }
 
     await this.prisma.partner.delete({ where: { id } });
-    return { message: `Partenaire ${id} supprimé avec succès` };
+    return { message: `Client ${id} supprimé`, archived: false };
+  }
+
+  private async assertExists(companyId: number, id: number) {
+    const found = await this.prisma.partner.findFirst({
+      where: { id, companyId },
+      select: { id: true },
+    });
+    if (!found) throw new NotFoundException('Client introuvable');
   }
 }

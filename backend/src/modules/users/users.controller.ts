@@ -1,66 +1,68 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
   Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
+import {
+  CompanyId,
+  CurrentUser,
+} from 'src/common/decorators/current-user.decorator';
 import { UsersService } from './users.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('users')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // 🔹 Créer un utilisateur
   @Post()
   @RequirePermission('system', 'users', 'create')
-  async create(
-    @Body() body: { email: string; username: string; password: string },
-  ) {
-    return this.usersService.create(body);
+  create(@CompanyId() companyId: number, @Body() dto: CreateUserDto) {
+    return this.usersService.create(companyId, dto);
   }
 
-  // 🔹 Récupérer tous les utilisateurs
   @Get()
   @RequirePermission('system', 'users', 'read')
-  async findAll() {
-    return this.usersService.findAll();
+  findAll(@CompanyId() companyId: number) {
+    return this.usersService.findAll(companyId);
   }
 
-  // 🔹 Récupérer un utilisateur par ID
   @Get(':id')
   @RequirePermission('system', 'users', 'read')
-  async findOne(@Param('id') id: string) {
-    return this.usersService.findOne(Number(id));
-  }
-
-  // 🔹 Mettre à jour un utilisateur
-  @Put(':id')
-  @RequirePermission('system', 'users', 'update')
-  async update(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      email?: string;
-      username?: string;
-      password?: string;
-      isActive?: boolean;
-    },
+  findOne(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.usersService.update(Number(id), body);
+    return this.usersService.findOne(companyId, id);
   }
 
-  // 🔹 Supprimer un utilisateur
+  @Patch(':id')
+  @RequirePermission('system', 'users', 'update')
+  update(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.usersService.update(companyId, id, dto);
+  }
+
   @Delete(':id')
   @RequirePermission('system', 'users', 'delete')
-  async delete(@Param('id') id: string) {
-    return this.usersService.delete(Number(id));
+  remove(
+    @CompanyId() companyId: number,
+    @CurrentUser('userId') currentUserId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.usersService.remove(companyId, currentUserId, id);
   }
 }

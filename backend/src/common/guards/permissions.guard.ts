@@ -6,20 +6,12 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Request } from 'express';
+import type { AuthenticatedRequest } from 'src/common/types/authenticated-request';
 
-// --- Typage global ---
 interface RequiredPermission {
   moduleName: string;
   resourceName: string;
   actionName: string;
-}
-
-interface AuthenticatedUser {
-  userId: number;
-  roleId?: number;
-  email?: string;
-  [key: string]: any;
 }
 
 @Injectable()
@@ -30,48 +22,48 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // ✅ Typage explicite du request
-    const request = context
-      .switchToHttp()
-      .getRequest<Request & { user?: AuthenticatedUser }>();
+    const requiredPermission = this.reflector.getAllAndOverride<
+      RequiredPermission | undefined
+    >('permission', [context.getHandler(), context.getClass()]);
+
+    // Route sans @RequirePermission : le JwtAuthGuard suffit.
+    if (!requiredPermission) return true;
+
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
 
     if (!user) {
       throw new ForbiddenException('Utilisateur non authentifié');
     }
 
-    // ✅ Récupération typée de la permission
-    const requiredPermission = this.reflector.get<RequiredPermission>(
-      'permission',
-      context.getHandler(),
-    );
-
-    if (!requiredPermission) return true; // aucune permission requise pour cette route
-
-    // ✅ Recherche du rôle et des permissions
-    const userCompany = await this.prisma.userCompany.findFirst({
-      where: { userId: user.userId },
+    // Le rôle est cherché dans la société ACTIVE, pas la première venue.
+    const userCompany = await this.prisma.userCompany.findUnique({
+      where: {
+        userId_companyId: { userId: user.userId, companyId: user.companyId },
+      },
       include: {
         role: {
-          include: {
-            permissions: {
-              include: { permission: true },
-            },
-          },
+          include: { permissions: { include: { permission: true } } },
         },
       },
     });
 
-    if (!userCompany?.role) {
+    if (!userCompany) {
+      throw new ForbiddenException(
+        "Vous n'appartenez pas à cette société",
+      );
+    }
+
+    if (!userCompany.role) {
       throw new ForbiddenException('Aucun rôle assigné');
     }
 
     const hasPermission = userCompany.role.permissions.some(
       (rp) =>
+        rp.granted &&
         rp.permission.moduleName === requiredPermission.moduleName &&
         rp.permission.resourceName === requiredPermission.resourceName &&
-        rp.permission.actionName === requiredPermission.actionName &&
-        rp.granted === true,
+        rp.permission.actionName === requiredPermission.actionName,
     );
 
     if (!hasPermission) {

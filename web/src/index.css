@@ -1,0 +1,209 @@
+@import 'tailwindcss';
+
+/*
+  Jetons de couleur. Le clair est défini sur :root ; le sombre est redéclaré
+  sous la préférence système ET sous [data-theme], pour que le sélecteur
+  manuel gagne dans les deux sens.
+*/
+:root {
+  color-scheme: light;
+
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f2ef;
+  --border: #e1e0d9;
+  --border-strong: #c3c2b7;
+
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+
+  --accent: #2a78d6;
+  --accent-hover: #256abf;
+  --accent-soft: #e8f0fc;
+  --accent-ink: #ffffff;
+
+  --good: #0ca30c;
+  --good-soft: #e4f6e4;
+  --warning: #fab219;
+  --warning-soft: #fdf3dd;
+  --serious: #ec835a;
+  --serious-soft: #fdeee7;
+  --critical: #d03b3b;
+  --critical-soft: #fbe8e8;
+
+  /* Séries de graphiques (palette validée) */
+  --series-1: #2a78d6;
+  --series-2: #eda100;
+  --series-3: #1baf7a;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+
+  /* Rampe ordinale du pipeline — pas plus clair que le pas 250 en mode clair */
+  --stage-1: #86b6ef;
+  --stage-2: #5598e7;
+  --stage-3: #2a78d6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-raised: #212120;
+    --surface-sunken: #141413;
+    --border: #2c2c2a;
+    --border-strong: #383835;
+
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+
+    --accent: #3987e5;
+    --accent-hover: #5598e7;
+    --accent-soft: #17293f;
+    --accent-ink: #0b0b0b;
+
+    --good: #0ca30c;
+    --good-soft: #16281a;
+    --warning: #fab219;
+    --warning-soft: #2e2513;
+    --serious: #ec835a;
+    --serious-soft: #2f1f17;
+    --critical: #d03b3b;
+    --critical-soft: #2d1616;
+
+    --series-1: #3987e5;
+    --series-2: #c98500;
+    --series-3: #199e70;
+    --grid: #2c2c2a;
+    --axis: #383835;
+
+    --stage-1: #2a78d6;
+    --stage-2: #256abf;
+    --stage-3: #184f95;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-raised: #212120;
+  --surface-sunken: #141413;
+  --border: #2c2c2a;
+  --border-strong: #383835;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+
+  --accent: #3987e5;
+  --accent-hover: #5598e7;
+  --accent-soft: #17293f;
+  --accent-ink: #0b0b0b;
+
+  --good: #0ca30c;
+  --good-soft: #16281a;
+  --warning: #fab219;
+  --warning-soft: #2e2513;
+  --serious: #ec835a;
+  --serious-soft: #2f1f17;
+  --critical: #d03b3b;
+  --critical-soft: #2d1616;
+
+  --series-1: #3987e5;
+  --series-2: #c98500;
+  --series-3: #199e70;
+  --grid: #2c2c2a;
+  --axis: #383835;
+
+  --stage-1: #2a78d6;
+  --stage-2: #256abf;
+  --stage-3: #184f95;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text-primary);
+  --color-ink-2: var(--text-secondary);
+  --color-ink-3: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-serious: var(--serious);
+  --color-serious-soft: var(--serious-soft);
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Anneau de focus homogène, visible sur les deux thèmes. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* Barres de défilement discrètes, alignées sur le thème. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@keyframes fk-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fk-enter {
+  animation: fk-fade-up 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
