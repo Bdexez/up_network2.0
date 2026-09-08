@@ -26,6 +26,27 @@ export const P = {
   activitiesUpdate: 'crm.activities.update',
   activitiesDelete: 'crm.activities.delete',
 
+  quotesRead: 'sales.quotes.read',
+  quotesCreate: 'sales.quotes.create',
+  quotesUpdate: 'sales.quotes.update',
+  quotesDelete: 'sales.quotes.delete',
+
+  paymentsRead: 'sales.payments.read',
+  paymentsCreate: 'sales.payments.create',
+  paymentsDelete: 'sales.payments.delete',
+
+  purchasesRead: 'purchases.orders.read',
+  purchasesCreate: 'purchases.orders.create',
+  purchasesUpdate: 'purchases.orders.update',
+  purchasesDelete: 'purchases.orders.delete',
+
+  stockRead: 'stock.stock.read',
+  stockUpdate: 'stock.stock.update',
+  warehousesRead: 'stock.warehouses.read',
+  warehousesCreate: 'stock.warehouses.create',
+  warehousesUpdate: 'stock.warehouses.update',
+  warehousesDelete: 'stock.warehouses.delete',
+
   productsRead: 'stock.products.read',
   productsCreate: 'stock.products.create',
   productsUpdate: 'stock.products.update',
@@ -38,6 +59,7 @@ export const P = {
 
   invoicesRead: 'sales.invoices.read',
   invoicesCreate: 'sales.invoices.create',
+  invoicesUpdate: 'sales.invoices.update',
   invoicesDelete: 'sales.invoices.delete',
 
   usersRead: 'system.users.read',

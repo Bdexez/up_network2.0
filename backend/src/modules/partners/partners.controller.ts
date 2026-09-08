@@ -15,13 +15,18 @@ import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import { CompanyId } from 'src/common/decorators/current-user.decorator';
 import { PartnersService } from './partners.service';
+import { ContactsService } from './contacts.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { UpdatePartnerDto } from './dto/update-partner.dto';
+import { CreateContactDto, UpdateContactDto } from './dto/contact.dto';
 
 @Controller('partners')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class PartnersController {
-  constructor(private readonly partnersService: PartnersService) {}
+  constructor(
+    private readonly partnersService: PartnersService,
+    private readonly contactsService: ContactsService,
+  ) {}
 
   @Post()
   @RequirePermission('crm', 'partners', 'create')
@@ -61,5 +66,47 @@ export class PartnersController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.partnersService.remove(companyId, id);
+  }
+
+  // --- Contacts rattachés au tiers ------------------------------------------
+
+  @Get(':id/contacts')
+  @RequirePermission('crm', 'partners', 'read')
+  findContacts(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.contactsService.findAll(companyId, id);
+  }
+
+  @Post(':id/contacts')
+  @RequirePermission('crm', 'partners', 'update')
+  createContact(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateContactDto,
+  ) {
+    return this.contactsService.create(companyId, id, dto);
+  }
+
+  @Patch(':id/contacts/:contactId')
+  @RequirePermission('crm', 'partners', 'update')
+  updateContact(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('contactId', ParseIntPipe) contactId: number,
+    @Body() dto: UpdateContactDto,
+  ) {
+    return this.contactsService.update(companyId, id, contactId, dto);
+  }
+
+  @Delete(':id/contacts/:contactId')
+  @RequirePermission('crm', 'partners', 'update')
+  removeContact(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('contactId', ParseIntPipe) contactId: number,
+  ) {
+    return this.contactsService.remove(companyId, id, contactId);
   }
 }

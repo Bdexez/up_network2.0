@@ -1,0 +1,14 @@
+import { Global, Module } from '@nestjs/common';
+import { DocumentLinesService } from './lines.service';
+import { NumberingService } from './numbering.service';
+
+/**
+ * Briques partagées par tous les documents commerciaux.
+ * Global : la numérotation est utilisée par cinq modules.
+ */
+@Global()
+@Module({
+  providers: [NumberingService, DocumentLinesService],
+  exports: [NumberingService, DocumentLinesService],
+})
+export class DocumentsModule {}

@@ -34,11 +34,15 @@ export function Button({
   className,
   children,
   disabled,
+  // Sans type explicite, un <button> dans un <form> vaut submit : un bouton
+  // d'action comme « Ajouter une ligne » enverrait le formulaire.
+  type = 'button',
   ...props
 }: ButtonProps) {
   return (
     <button
       {...props}
+      type={type}
       disabled={disabled || loading}
       className={clsx(
         'inline-flex shrink-0 items-center justify-center rounded-lg font-medium transition-colors',

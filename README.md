@@ -88,21 +88,49 @@ rejoint une société existante **sans rôle** — un admin doit lui en attribue
 
 **Cœur** — sociétés, utilisateurs, rôles, permissions, multi-société avec bascule.
 
-**CRM** (addon ajouté) :
+**CRM** :
 - **Pistes** : statuts (nouvelle → contactée → qualifiée / non qualifiée), source,
   potentiel estimé, responsable.
-- **Conversion** : une piste devient un client, et facultativement une opportunité ;
+- **Conversion** : une piste devient un tiers, et facultativement une opportunité ;
   l'opération est transactionnelle et rattache les activités existantes.
 - **Pipeline** : opportunités par étape (qualification, proposition, négociation,
   gagnée, perdue), montant pondéré par la probabilité, glisser-déposer entre colonnes.
 - **Activités** : appels, réunions, e-mails, tâches, notes — rattachées à une piste,
-  une opportunité ou un client, avec échéance et repérage des retards.
+  une opportunité ou un tiers, avec échéance et repérage des retards.
+- **Tiers & contacts** : clients, fournisseurs ou les deux, avec interlocuteurs,
+  adresse complète et n° de TVA.
 
-**Ventes** — catalogue produits, commandes (valorisées au prix courant du catalogue,
-recalculées côté serveur), facturation PDF.
+**Cycle de vente** — devis → commande → facture → règlements :
 
-**Pilotage** — chiffre d'affaires mensuel, meilleurs clients, tunnel de pistes,
-activité récente.
+| Document | Référence | Cycle de vie |
+|---|---|---|
+| Devis | `DE2026-0001` | brouillon → validé → signé / refusé → converti |
+| Commande | `CO2026-0001` | brouillon → validée → expédiée → facturée |
+| Facture | `FA2026-0001` | brouillon → impayée → partielle → réglée |
+| Commande fournisseur | `CF2026-0001` | brouillon → commandée → réceptionnée |
+
+- **TVA** : chaque ligne porte quantité, prix unitaire HT, remise et taux de TVA ;
+  les totaux HT / TVA / TTC sont calculés côté serveur, avec un détail par taux.
+- **Documents figés** : chaque document a ses **propres** lignes. Une conversion
+  recopie les lignes, elle ne les partage pas — modifier une commande ne change
+  jamais une facture déjà émise.
+- **Règlements** : partiels ou totaux, plusieurs moyens de paiement ; le statut et
+  le reste à payer se déduisent des encaissements, ils ne se saisissent pas.
+- **PDF** : facture complète avec en-tête société, coordonnées client, détail des
+  lignes, ventilation de TVA et reste à payer.
+
+**Achats & stock** :
+- **Entrepôts** multiples, avec un entrepôt par défaut.
+- **Niveaux de stock** par produit et par entrepôt, valorisation au prix d'achat,
+  seuils d'alerte de réapprovisionnement.
+- **Mouvements** : chaque variation est journalisée avec sa quantité signée, le
+  stock résultant et son document d'origine. Expédier une commande sort le stock,
+  réceptionner une commande fournisseur l'entre — automatiquement et dans la même
+  transaction que le changement de statut.
+- **Ajustements et transferts** manuels avec motif.
+
+**Pilotage** — chiffre d'affaires facturé, encours client et retards de paiement,
+devis en cours, pipeline, meilleurs clients, alertes de stock, activité récente.
 
 ---
 
@@ -114,16 +142,56 @@ POST   /auth/switch-company
 
 GET    /dashboard/overview | /revenue | /top-partners | /recent
 
-GET    /crm/leads            POST /crm/leads          GET /crm/leads/stats
-PATCH  /crm/leads/:id        POST /crm/leads/:id/convert
+CRM
+GET    /crm/leads            POST /crm/leads          GET  /crm/leads/stats
+POST   /crm/leads/:id/convert
 GET    /crm/opportunities    GET  /crm/opportunities/pipeline
 PATCH  /crm/opportunities/:id/stage
 GET    /crm/activities       PATCH /crm/activities/:id/toggle
+GET    /partners/:id/contacts   POST /partners/:id/contacts
 
-GET    /partners  /products  /orders  /invoices        (CRUD complet)
-POST   /invoices/generate/:orderId    GET /invoices/:id/pdf
+Cycle de vente
+GET    /quotes               POST /quotes
+PATCH  /quotes/:id/status    POST /quotes/:id/convert       → commande
+GET    /orders               POST /orders
+PATCH  /orders/:id/status    POST /orders/:id/ship          → sortie de stock
+                             POST /orders/:id/invoice       → facture
+GET    /invoices             POST /invoices
+PATCH  /invoices/:id/status  GET  /invoices/:id/pdf
+GET    /invoices/:id/payments   POST /invoices/:id/payments
+
+Achats & stock
+GET    /purchases            POST /purchases
+PATCH  /purchases/:id/status POST /purchases/:id/receive    → entrée de stock
+GET    /stock/levels         GET  /stock/movements
+POST   /stock/adjust         POST /stock/transfer
+GET    /stock/warehouses     POST /stock/warehouses
+
+Administration
+GET    /partners  /products                              (CRUD complet)
 GET    /users  /roles  /roles/permissions  /companies/mine  /companies/current
 ```
+
+---
+
+## Organisation du code
+
+Les quatre documents commerciaux partagent leurs briques plutôt que de les
+dupliquer :
+
+| Brique | Rôle |
+|---|---|
+| `common/documents/totals.ts` | seul endroit où se calculent HT, TVA et TTC |
+| `common/documents/lines.service.ts` | complète les lignes depuis le catalogue et fige libellé, prix et TVA |
+| `common/documents/numbering.service.ts` | compteur par société / type / année, incrémenté dans la transaction de création |
+| `common/documents/workflow.ts` | transitions de statut autorisées et verrouillage des documents figés |
+| `modules/*/[…]-status.ts` | le cycle de vie de chaque document, déclaré une fois |
+
+Côté interface, `components/documents/` reprend la même logique : `LineEditor`,
+`DocumentTotals`, `StatusBadge`, `StatusActions` et `DocumentFormModal` servent
+les quatre écrans de document. Les cycles de vie côté client vivent dans
+`lib/documents.ts` — ils ne servent qu'à n'afficher que les boutons utiles,
+l'API restant seule juge de ce qui est autorisé.
 
 ---
 

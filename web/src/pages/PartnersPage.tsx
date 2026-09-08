@@ -27,9 +27,11 @@ const EMPTY = {
   email: '',
   phone: '',
   address: '',
+  zipCode: '',
   city: '',
   country: '',
   website: '',
+  vatNumber: '',
 };
 
 export function PartnersPage() {
@@ -123,7 +125,7 @@ export function PartnersPage() {
                 <Th>Type</Th>
                 <Th>Contact</Th>
                 <Th>Ville</Th>
-                <Th align="right">Commandes</Th>
+                <Th align="right">Documents</Th>
                 <Th align="right">Créé le</Th>
                 <Th />
               </tr>
@@ -152,7 +154,9 @@ export function PartnersPage() {
                   </Td>
                   <Td>{partner.city ?? '—'}</Td>
                   <Td align="right" numeric>
-                    {partner._count?.orders ?? 0}
+                    {(partner._count?.quotes ?? 0) +
+                      (partner._count?.orders ?? 0) +
+                      (partner._count?.invoices ?? 0)}
                   </Td>
                   <Td align="right" numeric>
                     {formatDate(partner.createdAt)}
@@ -242,9 +246,11 @@ function PartnerForm({
             email: partner.email ?? '',
             phone: partner.phone ?? '',
             address: partner.address ?? '',
+            zipCode: partner.zipCode ?? '',
             city: partner.city ?? '',
             country: partner.country ?? '',
             website: partner.website ?? '',
+            vatNumber: partner.vatNumber ?? '',
           }
         : EMPTY,
     );
@@ -292,8 +298,15 @@ function PartnerForm({
         <div className="sm:col-span-2">
           <Input label="Adresse" value={form.address} onChange={update('address')} />
         </div>
+        <Input label="Code postal" value={form.zipCode} onChange={update('zipCode')} />
         <Input label="Ville" value={form.city} onChange={update('city')} />
         <Input label="Pays" value={form.country} onChange={update('country')} />
+        <Input
+          label="N° TVA"
+          hint="Repris sur les factures"
+          value={form.vatNumber}
+          onChange={update('vatNumber')}
+        />
         <div className="sm:col-span-2">
           <Input label="Site web" value={form.website} onChange={update('website')} />
         </div>

@@ -1,15 +1,19 @@
 import {
+  Boxes,
   Building2,
+  CalendarCheck,
   Contact,
+  FileSignature,
   FileText,
   Gauge,
   KanbanSquare,
   Package,
   Receipt,
   Shield,
+  ShoppingCart,
   Target,
   Users,
-  CalendarCheck,
+  Warehouse,
   type LucideIcon,
 } from 'lucide-react';
 import { P } from '../../lib/permissions';
@@ -50,15 +54,24 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: CalendarCheck,
         permission: P.activitiesRead,
       },
-      { to: '/clients', label: 'Clients', icon: Contact, permission: P.partnersRead },
+      { to: '/clients', label: 'Tiers', icon: Contact, permission: P.partnersRead },
     ],
   },
   {
     title: 'Ventes',
     items: [
-      { to: '/produits', label: 'Catalogue', icon: Package, permission: P.productsRead },
+      { to: '/devis', label: 'Devis', icon: FileSignature, permission: P.quotesRead },
       { to: '/commandes', label: 'Commandes', icon: FileText, permission: P.ordersRead },
       { to: '/factures', label: 'Factures', icon: Receipt, permission: P.invoicesRead },
+    ],
+  },
+  {
+    title: 'Achats & stock',
+    items: [
+      { to: '/achats', label: 'Commandes fournisseur', icon: ShoppingCart, permission: P.purchasesRead },
+      { to: '/produits', label: 'Catalogue', icon: Package, permission: P.productsRead },
+      { to: '/stock', label: 'Stock', icon: Boxes, permission: P.stockRead },
+      { to: '/entrepots', label: 'Entrepôts', icon: Warehouse, permission: P.warehousesRead },
     ],
   },
   {

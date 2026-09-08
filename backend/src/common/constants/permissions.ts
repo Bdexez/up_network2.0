@@ -45,11 +45,32 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { moduleName: 'crm', resourceName: 'activities', actionName: 'update', description: 'Modifier une activité' },
   { moduleName: 'crm', resourceName: 'activities', actionName: 'delete', description: 'Supprimer une activité' },
 
-  // --- Catalogue ---
+  // --- Devis & ventes ---
+  { moduleName: 'sales', resourceName: 'quotes', actionName: 'read', description: 'Consulter les devis' },
+  { moduleName: 'sales', resourceName: 'quotes', actionName: 'create', description: 'Créer un devis' },
+  { moduleName: 'sales', resourceName: 'quotes', actionName: 'update', description: 'Modifier un devis' },
+  { moduleName: 'sales', resourceName: 'quotes', actionName: 'delete', description: 'Supprimer un devis' },
+  { moduleName: 'sales', resourceName: 'payments', actionName: 'read', description: 'Consulter les règlements' },
+  { moduleName: 'sales', resourceName: 'payments', actionName: 'create', description: 'Enregistrer un règlement' },
+  { moduleName: 'sales', resourceName: 'payments', actionName: 'delete', description: 'Supprimer un règlement' },
+
+  // --- Achats ---
+  { moduleName: 'purchases', resourceName: 'orders', actionName: 'read', description: 'Consulter les commandes fournisseur' },
+  { moduleName: 'purchases', resourceName: 'orders', actionName: 'create', description: 'Créer une commande fournisseur' },
+  { moduleName: 'purchases', resourceName: 'orders', actionName: 'update', description: 'Modifier ou réceptionner une commande fournisseur' },
+  { moduleName: 'purchases', resourceName: 'orders', actionName: 'delete', description: 'Supprimer une commande fournisseur' },
+
+  // --- Catalogue & stock ---
   { moduleName: 'stock', resourceName: 'products', actionName: 'read', description: 'Consulter le catalogue' },
   { moduleName: 'stock', resourceName: 'products', actionName: 'create', description: 'Créer un produit' },
   { moduleName: 'stock', resourceName: 'products', actionName: 'update', description: 'Modifier un produit' },
   { moduleName: 'stock', resourceName: 'products', actionName: 'delete', description: 'Supprimer un produit' },
+  { moduleName: 'stock', resourceName: 'stock', actionName: 'read', description: 'Consulter les stocks et mouvements' },
+  { moduleName: 'stock', resourceName: 'stock', actionName: 'update', description: 'Ajuster ou transférer du stock' },
+  { moduleName: 'stock', resourceName: 'warehouses', actionName: 'read', description: 'Consulter les entrepôts' },
+  { moduleName: 'stock', resourceName: 'warehouses', actionName: 'create', description: 'Créer un entrepôt' },
+  { moduleName: 'stock', resourceName: 'warehouses', actionName: 'update', description: 'Modifier un entrepôt' },
+  { moduleName: 'stock', resourceName: 'warehouses', actionName: 'delete', description: 'Supprimer un entrepôt' },
 
   // --- Ventes ---
   { moduleName: 'sales', resourceName: 'orders', actionName: 'read', description: 'Consulter les commandes' },

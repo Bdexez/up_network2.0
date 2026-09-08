@@ -7,8 +7,12 @@ import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PartnersPage } from './pages/PartnersPage';
 import { ProductsPage } from './pages/ProductsPage';
-import { OrdersPage } from './pages/OrdersPage';
-import { InvoicesPage } from './pages/InvoicesPage';
+import { QuotesPage } from './pages/sales/QuotesPage';
+import { OrdersPage } from './pages/sales/OrdersPage';
+import { InvoicesPage } from './pages/sales/InvoicesPage';
+import { PurchasesPage } from './pages/sales/PurchasesPage';
+import { StockPage } from './pages/stock/StockPage';
+import { WarehousesPage } from './pages/stock/WarehousesPage';
 import { LeadsPage } from './pages/crm/LeadsPage';
 import { PipelinePage } from './pages/crm/PipelinePage';
 import { ActivitiesPage } from './pages/crm/ActivitiesPage';
@@ -42,14 +46,27 @@ export default function App() {
             <Route path="clients" element={<PartnersPage />} />
           </Route>
 
-          <Route element={<RequirePermission permission={P.productsRead} />}>
-            <Route path="produits" element={<ProductsPage />} />
+          <Route element={<RequirePermission permission={P.quotesRead} />}>
+            <Route path="devis" element={<QuotesPage />} />
           </Route>
           <Route element={<RequirePermission permission={P.ordersRead} />}>
             <Route path="commandes" element={<OrdersPage />} />
           </Route>
           <Route element={<RequirePermission permission={P.invoicesRead} />}>
             <Route path="factures" element={<InvoicesPage />} />
+          </Route>
+
+          <Route element={<RequirePermission permission={P.purchasesRead} />}>
+            <Route path="achats" element={<PurchasesPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={P.productsRead} />}>
+            <Route path="produits" element={<ProductsPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={P.stockRead} />}>
+            <Route path="stock" element={<StockPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={P.warehousesRead} />}>
+            <Route path="entrepots" element={<WarehousesPage />} />
           </Route>
 
           <Route element={<RequirePermission permission={P.usersRead} />}>

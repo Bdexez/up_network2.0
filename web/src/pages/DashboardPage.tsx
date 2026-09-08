@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowUpRight,
+  Banknote,
+  Boxes,
   Contact,
+  FileSignature,
   FileText,
+  Receipt,
   Target,
   TrendingUp,
-  Trophy,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { api, errorMessage } from '../lib/api';
@@ -17,11 +20,15 @@ import {
   LEAD_STATUS_ORDER,
   STAGE_LABEL,
 } from '../lib/labels';
+import { INVOICE_FLOW, ORDER_FLOW, QUOTE_FLOW } from '../lib/documents';
 import type {
   DashboardOverview,
+  InvoiceStatus,
   LeadStatus,
   LeadStatusStat,
   OpportunityStage,
+  OrderStatus,
+  QuoteStatus,
   RecentEvent,
   RevenuePoint,
   TopPartner,
@@ -88,10 +95,25 @@ export function DashboardPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile
-              label="Chiffre d'affaires"
+              label="Chiffre d'affaires facturé"
               value={money(stats?.revenue)}
-              hint={`${money(stats?.monthRevenue)} ce mois-ci`}
+              hint={`${money(stats?.monthRevenue)} ce mois-ci · HT`}
               icon={<TrendingUp size={16} />}
+            />
+            <StatTile
+              label="Encours client"
+              value={money(stats?.outstandingAmount)}
+              hint={`${count(stats?.overdueInvoices)} facture(s) en retard`}
+              icon={<Banknote size={16} />}
+              tone={stats?.overdueInvoices ? 'alert' : undefined}
+              to={can(P.invoicesRead) ? '/factures' : undefined}
+            />
+            <StatTile
+              label="Devis en cours"
+              value={money(stats?.openQuotesAmount)}
+              hint={`${count(stats?.openQuotes)} devis à suivre`}
+              icon={<FileSignature size={16} />}
+              to={can(P.quotesRead) ? '/devis' : undefined}
             />
             <StatTile
               label="Pipeline ouvert"
@@ -100,19 +122,37 @@ export function DashboardPage() {
               icon={<Target size={16} />}
               to={can(P.opportunitiesRead) ? '/crm/pipeline' : undefined}
             />
-            <StatTile
-              label="Affaires gagnées"
-              value={money(stats?.wonAmount)}
-              hint={`${count(stats?.wonOpportunities)} opportunité(s) gagnée(s)`}
-              icon={<Trophy size={16} />}
-              tone="good"
-            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile
               label="Clients actifs"
               value={count(stats?.partners)}
-              hint={`${count(stats?.orders)} commande(s) · ${count(stats?.invoices)} facture(s)`}
+              hint={`${count(stats?.orders)} commande(s) enregistrée(s)`}
               icon={<Contact size={16} />}
               to={can(P.partnersRead) ? '/clients' : undefined}
+            />
+            <StatTile
+              label="Factures émises"
+              value={count(stats?.invoices)}
+              hint={`${money(stats?.wonAmount)} d'affaires gagnées`}
+              icon={<Receipt size={16} />}
+              to={can(P.invoicesRead) ? '/factures' : undefined}
+            />
+            <StatTile
+              label="Références en alerte"
+              value={count(stats?.lowStock)}
+              hint="Sous le seuil de réapprovisionnement"
+              icon={<Boxes size={16} />}
+              tone={stats?.lowStock ? 'alert' : undefined}
+              to={can(P.stockRead) ? '/stock' : undefined}
+            />
+            <StatTile
+              label="Produits au catalogue"
+              value={count(stats?.products)}
+              hint={`${count(stats?.openLeads)} piste(s) à traiter`}
+              icon={<FileText size={16} />}
+              to={can(P.productsRead) ? '/produits' : undefined}
             />
           </div>
 
@@ -138,7 +178,7 @@ export function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader
             title="Chiffre d'affaires mensuel"
-            subtitle="Total des commandes des 6 derniers mois"
+            subtitle="Total HT facturé sur les 6 derniers mois"
           />
           <div className="p-4">
             {revenue.isLoading ? (
@@ -152,14 +192,14 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Meilleurs clients" subtitle="Par chiffre d'affaires cumulé" />
+          <CardHeader title="Meilleurs clients" subtitle="Par chiffre d'affaires facturé" />
           <div className="p-4">
             {topPartners.isLoading ? (
               <Spinner />
             ) : (topPartners.data?.length ?? 0) === 0 ? (
               <EmptyState
-                title="Aucune commande"
-                description="Les meilleurs clients apparaîtront ici dès la première commande."
+                title="Aucune facture"
+                description="Les meilleurs clients apparaîtront ici dès la première facture."
               />
             ) : (
               <BarList
@@ -217,8 +257,12 @@ export function DashboardPage() {
                   className="flex items-center gap-3 px-4 py-2.5"
                 >
                   <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-sunken text-ink-3">
-                    {event.type === 'order' ? (
+                    {event.type === 'quote' ? (
+                      <FileSignature size={14} aria-hidden />
+                    ) : event.type === 'order' ? (
                       <FileText size={14} aria-hidden />
+                    ) : event.type === 'invoice' ? (
+                      <Receipt size={14} aria-hidden />
                     ) : event.type === 'lead' ? (
                       <Target size={14} aria-hidden />
                     ) : (
@@ -246,15 +290,28 @@ export function DashboardPage() {
 
 /** Phrase lisible pour une ligne du flux d'activité. */
 function eventLabel(event: RecentEvent) {
-  if (event.type === 'order') {
-    return `Commande #${String(event.id).padStart(4, '0')} — ${event.name}`;
+  switch (event.type) {
+    case 'quote': {
+      const status = QUOTE_FLOW.meta[event.stage as QuoteStatus]?.label;
+      return `Devis ${event.ref} — ${event.name}${status ? ` · ${status}` : ''}`;
+    }
+    case 'order': {
+      const status = ORDER_FLOW.meta[event.stage as OrderStatus]?.label;
+      return `Commande ${event.ref} — ${event.name}${status ? ` · ${status}` : ''}`;
+    }
+    case 'invoice': {
+      const status = INVOICE_FLOW.meta[event.stage as InvoiceStatus]?.label;
+      return `Facture ${event.ref} — ${event.name}${status ? ` · ${status}` : ''}`;
+    }
+    case 'lead': {
+      const status = LEAD_STATUS_LABEL[event.stage as LeadStatus];
+      return `Piste « ${event.name} »${status ? ` — ${status}` : ''}`;
+    }
+    default: {
+      const stage = STAGE_LABEL[event.stage as OpportunityStage];
+      return `Opportunité « ${event.name} »${stage ? ` — ${stage}` : ''}`;
+    }
   }
-  if (event.type === 'lead') {
-    const status = LEAD_STATUS_LABEL[event.stage as LeadStatus];
-    return `Piste « ${event.name} »${status ? ` — ${status}` : ''}`;
-  }
-  const stage = STAGE_LABEL[event.stage as OpportunityStage];
-  return `Opportunité « ${event.name} »${stage ? ` — ${stage}` : ''}`;
 }
 
 function StatTile({
@@ -269,7 +326,7 @@ function StatTile({
   value: string;
   hint: string;
   icon: ReactNode;
-  tone?: 'good';
+  tone?: 'good' | 'alert';
   to?: string;
 }) {
   const body = (
@@ -280,7 +337,9 @@ function StatTile({
           className={
             tone === 'good'
               ? 'grid size-7 place-items-center rounded-lg bg-good-soft text-good'
-              : 'grid size-7 place-items-center rounded-lg bg-sunken text-ink-3'
+              : tone === 'alert'
+                ? 'grid size-7 place-items-center rounded-lg bg-serious-soft text-serious'
+                : 'grid size-7 place-items-center rounded-lg bg-sunken text-ink-3'
           }
         >
           {icon}

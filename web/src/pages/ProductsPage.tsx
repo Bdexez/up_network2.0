@@ -3,14 +3,16 @@ import { Package, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useDebounced, useList, useWrite } from '../lib/hooks';
 import { formatDate, money } from '../lib/format';
+import { PRODUCT_TYPE_LABEL } from '../lib/documents';
 import { P } from '../lib/permissions';
-import type { Product } from '../lib/types';
+import type { Product, ProductType } from '../lib/types';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../components/ui/Button';
-import { Input, Textarea } from '../components/ui/Field';
+import { Input, Select, Textarea } from '../components/ui/Field';
 import { ConfirmDialog, Modal } from '../components/ui/Modal';
 import { SearchInput } from '../components/ui/SearchInput';
 import {
+  Badge,
   Card,
   EmptyState,
   ErrorState,
@@ -20,7 +22,17 @@ import {
 import { Td, TableWrap, Th, Tr } from '../components/ui/Table';
 import { errorMessage } from '../lib/api';
 
-const EMPTY = { name: '', sku: '', description: '', price: '' };
+const EMPTY = {
+  name: '',
+  sku: '',
+  description: '',
+  type: 'PRODUCT' as ProductType,
+  price: '',
+  costPrice: '',
+  vatRate: '20',
+  manageStock: true,
+  stockAlert: '0',
+};
 
 export function ProductsPage() {
   const { can } = useAuth();
@@ -42,7 +54,12 @@ export function ProductsPage() {
         name: body.name,
         sku: body.sku,
         description: body.description || undefined,
+        type: body.type,
         price: Number(body.price),
+        costPrice: Number(body.costPrice) || 0,
+        vatRate: Number(body.vatRate) || 0,
+        manageStock: body.manageStock,
+        stockAlert: Number(body.stockAlert) || 0,
       };
       if (id) return (await api.patch(`/products/${id}`, payload)).data;
       return (await api.post('/products', payload)).data;
@@ -108,7 +125,10 @@ export function ProductsPage() {
               <tr>
                 <Th>Produit</Th>
                 <Th>Référence</Th>
-                <Th align="right">Prix</Th>
+                <Th>Type</Th>
+                <Th align="right">Prix HT</Th>
+                <Th align="right">TVA</Th>
+                <Th align="right">Stock</Th>
                 <Th align="right">Créé le</Th>
                 <Th />
               </tr>
@@ -129,8 +149,19 @@ export function ProductsPage() {
                       {product.sku}
                     </code>
                   </Td>
+                  <Td>
+                    <Badge tone={product.type === 'SERVICE' ? 'neutral' : 'accent'}>
+                      {PRODUCT_TYPE_LABEL[product.type]}
+                    </Badge>
+                  </Td>
                   <Td align="right" numeric className="font-medium text-ink">
                     {money(product.price, true)}
+                  </Td>
+                  <Td align="right" numeric>
+                    {product.vatRate} %
+                  </Td>
+                  <Td align="right" numeric>
+                    {product.manageStock ? stockOf(product) : '—'}
                   </Td>
                   <Td align="right" numeric>
                     {formatDate(product.createdAt)}
@@ -209,15 +240,20 @@ function ProductForm({
             name: product.name,
             sku: product.sku,
             description: product.description ?? '',
+            type: product.type,
             price: String(product.price),
+            costPrice: String(product.costPrice),
+            vatRate: String(product.vatRate),
+            manageStock: product.manageStock,
+            stockAlert: String(product.stockAlert),
           }
         : EMPTY,
     );
   }, [open, product]);
 
-  const update =
-    (key: keyof typeof EMPTY) => (event: { target: { value: string } }) =>
-      setForm((current) => ({ ...current, [key]: event.target.value }));
+  type TextKey = Exclude<keyof typeof EMPTY, 'manageStock' | 'type'>;
+  const update = (key: TextKey) => (event: { target: { value: string } }) =>
+    setForm((current) => ({ ...current, [key]: event.target.value }));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -249,8 +285,26 @@ function ProductForm({
           value={form.sku}
           onChange={update('sku')}
         />
+        <Select
+          label="Type"
+          value={form.type}
+          onChange={(event) =>
+            setForm((current) => ({
+              ...current,
+              type: event.target.value as ProductType,
+              // Un service n'est pas suivi en stock par défaut.
+              manageStock: event.target.value !== 'SERVICE',
+            }))
+          }
+        >
+          {(Object.keys(PRODUCT_TYPE_LABEL) as ProductType[]).map((type) => (
+            <option key={type} value={type}>
+              {PRODUCT_TYPE_LABEL[type]}
+            </option>
+          ))}
+        </Select>
         <Input
-          label="Prix unitaire (€)"
+          label="Prix de vente HT (€)"
           type="number"
           min="0"
           step="0.01"
@@ -258,6 +312,44 @@ function ProductForm({
           value={form.price}
           onChange={update('price')}
         />
+        <Input
+          label="Prix d'achat HT (€)"
+          type="number"
+          min="0"
+          step="0.01"
+          hint="Sert à valoriser le stock et calculer la marge"
+          value={form.costPrice}
+          onChange={update('costPrice')}
+        />
+        <Input
+          label="TVA (%)"
+          type="number"
+          min="0"
+          step="0.1"
+          value={form.vatRate}
+          onChange={update('vatRate')}
+        />
+        <Input
+          label="Seuil d'alerte"
+          type="number"
+          min="0"
+          step="0.01"
+          disabled={!form.manageStock}
+          hint="0 = pas d'alerte"
+          value={form.stockAlert}
+          onChange={update('stockAlert')}
+        />
+        <label className="flex items-center gap-2 text-[13px] text-ink-2 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={form.manageStock}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, manageStock: event.target.checked }))
+            }
+            className="size-4 accent-[var(--accent)]"
+          />
+          Suivre cet article en stock
+        </label>
         <div className="sm:col-span-2">
           <Textarea
             label="Description"
@@ -269,4 +361,9 @@ function ProductForm({
       </form>
     </Modal>
   );
+}
+
+/** Stock cumulé tous entrepôts, tel que renvoyé par la liste des produits. */
+function stockOf(product: Product) {
+  return (product.stocks ?? []).reduce((acc, stock) => acc + stock.quantity, 0);
 }

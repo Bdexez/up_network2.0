@@ -11,19 +11,27 @@ import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { CrmModule } from './modules/crm/crm.module';
+import { DocumentsModule } from './common/documents/documents.module';
+import { QuotesModule } from './modules/quotes/quotes.module';
+import { StockModule } from './modules/stock/stock.module';
+import { PurchasesModule } from './modules/purchases/purchases.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
     PrismaModule,
+    DocumentsModule,
     AuthModule,
     UsersModule,
     RolesModule,
     CompaniesModule,
     PartnersModule,
     ProductsModule,
+    StockModule,
+    QuotesModule,
     OrdersModule,
     InvoicesModule,
+    PurchasesModule,
     CrmModule,
     DashboardModule,
   ],

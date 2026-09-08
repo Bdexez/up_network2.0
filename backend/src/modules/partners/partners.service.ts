@@ -21,13 +21,18 @@ export class PartnersService {
         { name: { contains: q, mode: 'insensitive' } },
         { email: { contains: q, mode: 'insensitive' } },
         { city: { contains: q, mode: 'insensitive' } },
+        { vatNumber: { contains: q, mode: 'insensitive' } },
       ];
     }
 
     return this.prisma.partner.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { orders: true, opportunities: true } } },
+      include: {
+        _count: {
+          select: { orders: true, quotes: true, invoices: true, opportunities: true },
+        },
+      },
     });
   }
 
@@ -35,7 +40,10 @@ export class PartnersService {
     const partner = await this.prisma.partner.findFirst({
       where: { id, companyId },
       include: {
+        contacts: { orderBy: [{ isPrimary: 'desc' }, { lastName: 'asc' }] },
+        quotes: { orderBy: { createdAt: 'desc' }, take: 10 },
         orders: { orderBy: { createdAt: 'desc' }, take: 10 },
+        invoices: { orderBy: { createdAt: 'desc' }, take: 10 },
         opportunities: { orderBy: { createdAt: 'desc' }, take: 10 },
         activities: { orderBy: { createdAt: 'desc' }, take: 10 },
       },

@@ -12,21 +12,40 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Company {
-  id        Int      @id @default(autoincrement())
-  name      String
-  code      String   @unique
-  isActive  Boolean  @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String
+  code     String  @unique
+  isActive Boolean @default(true)
+
+  // Coordonnées reprises sur les documents commerciaux (devis, factures…)
+  address   String?
+  zipCode   String?
+  city      String?
+  country   String?
+  email     String?
+  phone     String?
+  vatNumber String?
+
+  /// Taux de TVA proposé par défaut sur les nouveaux produits.
+  defaultVatRate Float @default(20)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  roles         Role[]
-  users         UserCompany[]
-  partners      Partner[]
-  products      Product[]
-  orders        Order[]
-  leads         Lead[]
-  opportunities Opportunity[]
-  activities    Activity[]
+  roles          Role[]
+  users          UserCompany[]
+  partners       Partner[]
+  products       Product[]
+  quotes         Quote[]
+  orders         Order[]
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+  warehouses     Warehouse[]
+  stockMovements StockMovement[]
+  counters       DocumentCounter[]
+  leads          Lead[]
+  opportunities  Opportunity[]
+  activities     Activity[]
 }
 
 model User {
@@ -42,20 +61,26 @@ model User {
   updatedAt    DateTime @updatedAt
 
   userCompanies      UserCompany[]
+  quotes             Quote[]
   orders             Order[]
-  ownedLeads         Lead[]        @relation("LeadOwner")
-  ownedOpportunities Opportunity[] @relation("OpportunityOwner")
-  ownedActivities    Activity[]    @relation("ActivityOwner")
+  invoices           Invoice[]
+  purchaseOrders     PurchaseOrder[]
+  payments           Payment[]
+  stockMovements     StockMovement[]
+  ownedLeads         Lead[]          @relation("LeadOwner")
+  ownedOpportunities Opportunity[]   @relation("OpportunityOwner")
+  ownedActivities    Activity[]      @relation("ActivityOwner")
 }
 
 model Role {
-  id            Int              @id @default(autoincrement())
-  name          String
-  description   String?
-  companyId     Int
-  isSystemRole  Boolean          @default(false)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id           Int      @id @default(autoincrement())
+  name         String
+  description  String?
+  companyId    Int
+  isSystemRole Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
   company       Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   permissions   RolePermission[]
   userCompanies UserCompany[]
@@ -101,7 +126,32 @@ model UserCompany {
 }
 
 // ---------------------------------------------------------------------------
-// Tiers, catalogue, ventes
+// Numérotation des documents
+// ---------------------------------------------------------------------------
+
+enum DocumentType {
+  QUOTE
+  ORDER
+  INVOICE
+  PURCHASE_ORDER
+}
+
+/// Compteur par société, type de document et année : DE2026-0001, FA2026-0042…
+/// L'incrément est fait dans la transaction qui crée le document.
+model DocumentCounter {
+  id        Int          @id @default(autoincrement())
+  companyId Int
+  type      DocumentType
+  year      Int
+  value     Int          @default(0)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type, year])
+}
+
+// ---------------------------------------------------------------------------
+// Tiers & catalogue
 // ---------------------------------------------------------------------------
 
 enum PartnerType {
@@ -117,21 +167,49 @@ model Partner {
   email     String?
   phone     String?
   address   String?
+  zipCode   String?
   city      String?
   country   String?
   website   String?
+  vatNumber String?
   isActive  Boolean     @default(true)
   companyId Int
   company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
-  orders        Order[]
-  opportunities Opportunity[]
-  activities    Activity[]
-  leads         Lead[]
+  contacts       Contact[]
+  quotes         Quote[]
+  orders         Order[]
+  invoices       Invoice[]
+  purchaseOrders PurchaseOrder[]
+  opportunities  Opportunity[]
+  activities     Activity[]
+  leads          Lead[]
 
   @@index([companyId])
+}
+
+/// Interlocuteurs rattachés à un tiers.
+model Contact {
+  id        Int      @id @default(autoincrement())
+  firstName String?
+  lastName  String
+  role      String?
+  email     String?
+  phone     String?
+  isPrimary Boolean  @default(false)
+  partnerId Int
+  partner   Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partnerId])
+}
+
+enum ProductType {
+  PRODUCT
+  SERVICE
 }
 
 model Product {
@@ -139,52 +217,406 @@ model Product {
   name        String
   sku         String
   description String?
-  price       Float
-  companyId   Int
-  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  orderItems  OrderItem[]
+  type        ProductType @default(PRODUCT)
 
-  // Le SKU est unique par société, pas globalement.
+  /// Prix de vente hors taxes.
+  price     Float
+  /// Prix d'achat, sert à la valorisation du stock et à la marge.
+  costPrice Float @default(0)
+  vatRate   Float @default(20)
+
+  /// Les services ne sont pas suivis en stock.
+  manageStock Boolean @default(true)
+  /// Seuil déclenchant l'alerte de réapprovisionnement.
+  stockAlert  Float   @default(0)
+
+  companyId Int
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quoteLines         QuoteLine[]
+  orderLines         OrderLine[]
+  invoiceLines       InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
+  stocks             Stock[]
+  stockMovements     StockMovement[]
+
+  // La référence est unique par société, pas globalement.
   @@unique([companyId, sku])
   @@index([companyId])
 }
 
-model Order {
-  id          Int         @id @default(autoincrement())
-  companyId   Int
-  partnerId   Int
-  total       Float       @default(0)
-  createdById Int
-  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  partner     Partner     @relation(fields: [partnerId], references: [id])
-  createdBy   User        @relation(fields: [createdById], references: [id])
-  items       OrderItem[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  invoice     Invoice?
+// ---------------------------------------------------------------------------
+// Cycle de vente : devis -> commande -> facture -> paiements
+//
+// Chaque document porte ses propres lignes. C'est volontaire : une facture
+// figée ne doit pas changer parce qu'on a modifié la commande ou le tarif
+// catalogue après coup. Les lignes sont donc recopiées à chaque conversion.
+// ---------------------------------------------------------------------------
 
-  @@index([companyId])
+enum QuoteStatus {
+  DRAFT
+  VALIDATED
+  SIGNED
+  REFUSED
+  BILLED
 }
 
-model OrderItem {
-  id        Int     @id @default(autoincrement())
-  orderId   Int
-  productId Int
-  quantity  Int
-  price     Float
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
+model Quote {
+  id     Int         @id @default(autoincrement())
+  ref    String
+  status QuoteStatus @default(DRAFT)
+
+  date       DateTime  @default(now())
+  validUntil DateTime?
+  notes      String?
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  companyId   Int
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  partnerId   Int
+  partner     Partner @relation(fields: [partnerId], references: [id])
+  createdById Int
+  createdBy   User    @relation(fields: [createdById], references: [id])
+
+  lines  QuoteLine[]
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, ref])
+  @@index([companyId, status])
+}
+
+model QuoteLine {
+  id       Int   @id @default(autoincrement())
+  quoteId  Int
+  quote    Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  position Int   @default(0)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  /// Libellé figé au moment de l'ajout ; une ligne libre n'a pas de produit.
+  label           String
+  quantity        Float  @default(1)
+  unitPrice       Float
+  discountPercent Float  @default(0)
+  vatRate         Float  @default(20)
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  @@index([quoteId])
+}
+
+enum OrderStatus {
+  DRAFT
+  VALIDATED
+  SHIPPED
+  BILLED
+  CANCELLED
+}
+
+model Order {
+  id     Int         @id @default(autoincrement())
+  ref    String
+  status OrderStatus @default(DRAFT)
+
+  date         DateTime  @default(now())
+  deliveryDate DateTime?
+  shippedAt    DateTime?
+  notes        String?
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  companyId   Int
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  partnerId   Int
+  partner     Partner @relation(fields: [partnerId], references: [id])
+  createdById Int
+  createdBy   User    @relation(fields: [createdById], references: [id])
+
+  /// Devis d'origine, quand la commande vient d'une conversion.
+  quoteId Int?
+  quote   Quote? @relation(fields: [quoteId], references: [id])
+
+  lines    OrderLine[]
+  invoices Invoice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, ref])
+  @@index([companyId, status])
+}
+
+model OrderLine {
+  id       Int   @id @default(autoincrement())
+  orderId  Int
+  order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  position Int   @default(0)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  label           String
+  quantity        Float  @default(1)
+  unitPrice       Float
+  discountPercent Float  @default(0)
+  vatRate         Float  @default(20)
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  @@index([orderId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
 }
 
 model Invoice {
-  id        Int      @id @default(autoincrement())
-  orderId   Int      @unique
-  total     Float
-  pdfUrl    String?
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id     Int           @id @default(autoincrement())
+  ref    String
+  status InvoiceStatus @default(DRAFT)
+
+  date    DateTime  @default(now())
+  dueDate DateTime?
+  notes   String?
+
+  totalHT    Float @default(0)
+  totalVat   Float @default(0)
+  totalTTC   Float @default(0)
+  /// Somme des paiements encaissés ; maintenue par PaymentsService.
+  paidAmount Float @default(0)
+
+  pdfUrl String?
+
+  companyId   Int
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  partnerId   Int
+  partner     Partner @relation(fields: [partnerId], references: [id])
+  createdById Int
+  createdBy   User    @relation(fields: [createdById], references: [id])
+
+  /// Commande d'origine ; une facture peut aussi être créée directement.
+  orderId Int?
+  order   Order? @relation(fields: [orderId], references: [id])
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, ref])
+  @@index([companyId, status])
+}
+
+model InvoiceLine {
+  id        Int     @id @default(autoincrement())
+  invoiceId Int
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position  Int     @default(0)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  label           String
+  quantity        Float  @default(1)
+  unitPrice       Float
+  discountPercent Float  @default(0)
+  vatRate         Float  @default(20)
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  @@index([invoiceId])
+}
+
+enum PaymentMethod {
+  TRANSFER
+  CARD
+  CHECK
+  CASH
+  DIRECT_DEBIT
+  OTHER
+}
+
+model Payment {
+  id        Int           @id @default(autoincrement())
+  amount    Float
+  method    PaymentMethod @default(TRANSFER)
+  date      DateTime      @default(now())
+  reference String?
+  notes     String?
+
+  invoiceId Int
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdById Int
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Achats & stock
+// ---------------------------------------------------------------------------
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id     Int                 @id @default(autoincrement())
+  ref    String
+  status PurchaseOrderStatus @default(DRAFT)
+
+  date         DateTime  @default(now())
+  expectedDate DateTime?
+  receivedAt   DateTime?
+  notes        String?
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  companyId   Int
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplierId  Int
+  supplier    Partner @relation(fields: [supplierId], references: [id])
+  createdById Int
+  createdBy   User    @relation(fields: [createdById], references: [id])
+
+  /// Entrepôt crédité à la réception.
+  warehouseId Int?
+  warehouse   Warehouse? @relation(fields: [warehouseId], references: [id])
+
+  lines PurchaseOrderLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, ref])
+  @@index([companyId, status])
+}
+
+model PurchaseOrderLine {
+  id              Int           @id @default(autoincrement())
+  purchaseOrderId Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  position        Int           @default(0)
+
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  label           String
+  quantity        Float  @default(1)
+  unitPrice       Float
+  discountPercent Float  @default(0)
+  vatRate         Float  @default(20)
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  @@index([purchaseOrderId])
+}
+
+model Warehouse {
+  id          Int     @id @default(autoincrement())
+  name        String
+  code        String
+  address     String?
+  city        String?
+  description String?
+  isDefault   Boolean @default(false)
+  isActive    Boolean @default(true)
+
+  companyId Int
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stocks         Stock[]
+  movements      StockMovement[]
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+/// Quantité d'un produit dans un entrepôt. Toujours modifiée en même temps
+/// qu'un StockMovement, dans la même transaction.
+model Stock {
+  id          Int   @id @default(autoincrement())
+  productId   Int
+  warehouseId Int
+  quantity    Float @default(0)
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, warehouseId])
+  @@index([warehouseId])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+  TRANSFER
+}
+
+/// Journal des mouvements : chaque variation de stock y laisse une trace.
+model StockMovement {
+  id                Int               @id @default(autoincrement())
+  type              StockMovementType
+  /// Signée : positive pour une entrée, négative pour une sortie.
+  quantity          Float
+  /// Quantité en stock après le mouvement, pour relire l'historique.
+  resultingQuantity Float             @default(0)
+  reason            String?
+  /// Document à l'origine du mouvement, ex. « CO2026-0004 ».
+  documentRef       String?
+
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  companyId   Int
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdById Int
+  createdBy   User    @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([productId])
 }
 
 // ---------------------------------------------------------------------------

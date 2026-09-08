@@ -14,7 +14,21 @@ export class ProductsService {
 
   async create(companyId: number, data: CreateProductDto) {
     await this.assertSkuFree(companyId, data.sku);
-    return this.prisma.product.create({ data: { ...data, companyId } });
+
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { defaultVatRate: true },
+    });
+
+    return this.prisma.product.create({
+      data: {
+        ...data,
+        companyId,
+        vatRate: data.vatRate ?? company.defaultVatRate,
+        // Un service n'a pas de stock à suivre, sauf demande explicite.
+        manageStock: data.manageStock ?? data.type !== 'SERVICE',
+      },
+    });
   }
 
   findAll(companyId: number, search?: string) {
@@ -30,6 +44,7 @@ export class ProductsService {
 
     return this.prisma.product.findMany({
       where,
+      include: { stocks: { select: { quantity: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -53,12 +68,19 @@ export class ProductsService {
   async remove(companyId: number, id: number) {
     await this.findOne(companyId, id);
 
-    const linesCount = await this.prisma.orderItem.count({
-      where: { productId: id },
-    });
+    // Un produit référencé par un document commercial n'est jamais supprimé :
+    // cela viderait le libellé d'une facture déjà émise.
+    const [orderLines, quoteLines, invoiceLines, purchaseLines] = await Promise.all([
+      this.prisma.orderLine.count({ where: { productId: id } }),
+      this.prisma.quoteLine.count({ where: { productId: id } }),
+      this.prisma.invoiceLine.count({ where: { productId: id } }),
+      this.prisma.purchaseOrderLine.count({ where: { productId: id } }),
+    ]);
+    const linesCount = orderLines + quoteLines + invoiceLines + purchaseLines;
+
     if (linesCount > 0) {
       throw new ConflictException(
-        `Impossible de supprimer : ce produit apparaît dans ${linesCount} ligne(s) de commande`,
+        `Impossible de supprimer : ce produit apparaît dans ${linesCount} ligne(s) de document`,
       );
     }
 

@@ -31,6 +31,10 @@ export class CreatePartnerDto {
 
   @IsOptional()
   @IsString()
+  zipCode?: string;
+
+  @IsOptional()
+  @IsString()
   city?: string;
 
   @IsOptional()
@@ -40,6 +44,12 @@ export class CreatePartnerDto {
   @IsOptional()
   @IsString()
   website?: string;
+
+  /// Numéro de TVA intracommunautaire, repris sur les factures.
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  vatNumber?: string;
 
   @IsOptional()
   @IsBoolean()
