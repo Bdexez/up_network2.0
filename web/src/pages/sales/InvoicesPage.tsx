@@ -3,29 +3,33 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Banknote,
   Download,
+  Mail,
   Pencil,
   Plus,
   Receipt,
+  RotateCcw,
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { useList, useWrite } from '../../lib/hooks';
+import { useList, usePage, usePagination, useWrite } from '../../lib/hooks';
+import { useFileDownload } from '../../lib/download';
 import { formatDate, money } from '../../lib/format';
 import { INVOICE_FLOW, PAYMENT_METHOD_LABEL } from '../../lib/documents';
 import { P } from '../../lib/permissions';
 import type {
   Invoice,
+  MailResult,
   InvoiceStatus,
-  Partner,
+  PartnerOption,
   PaymentMethod,
-  Product,
+  ProductOption,
 } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
+import { useToast } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Field';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { useToast } from '../../components/ui/Toast';
 import {
   Badge,
   Card,
@@ -35,30 +39,35 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 import { DocumentFormModal } from '../../components/documents/DocumentFormModal';
 import { DocumentLines } from '../../components/documents/DocumentLines';
 import { DocumentTotals } from '../../components/documents/DocumentTotals';
 import { StatusActions } from '../../components/documents/StatusActions';
 import { StatusBadge } from '../../components/documents/StatusBadge';
 import { toDraftLines } from '../../components/documents/LineEditor';
+import { Attachments } from '../../components/documents/Attachments';
 
 export function InvoicesPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const companyCurrency = user?.company?.currency ?? 'EUR';
+  const pdf = useFileDownload();
   const { notify } = useToast();
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<Invoice | null>(null);
-  const [downloading, setDownloading] = useState<number | null>(null);
 
-  const invoices = useList<Invoice>(
-    ['invoices'],
-    '/invoices',
-    status ? { status } : undefined,
-  );
-  const partners = useList<Partner>(['partners'], '/partners');
-  const products = useList<Product>(['products'], '/products');
+  const pagination = usePagination();
+  const invoices = usePage<Invoice>(['invoices'], '/invoices', {
+    ...pagination.params,
+    ...(status ? { status } : {}),
+  });
+  const partners = useList<PartnerOption>(['partner-options', 'customer'], '/partners/options', {
+    type: 'CUSTOMER',
+  });
+  const products = useList<ProductOption>(['product-options'], '/products/options');
 
   const detail = useQuery({
     queryKey: ['invoices', 'detail', openId ?? editingId],
@@ -86,30 +95,15 @@ export function InvoicesPage() {
     { invalidate: [['invoices'], ['dashboard']], success: 'Facture supprimée' },
   );
 
-  /**
-   * Le PDF est protégé par le jeton : on le récupère en blob plutôt que par un
-   * lien direct, qui ne porterait pas l'en-tête Authorization.
-   */
-  const download = async (invoice: Invoice) => {
-    setDownloading(invoice.id);
-    try {
-      const response = await api.get<Blob>(`/invoices/${invoice.id}/pdf`, {
-        responseType: 'blob',
-      });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${invoice.ref}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      notify(errorMessage(error, 'Téléchargement impossible'), 'error');
-    } finally {
-      setDownloading(null);
-    }
-  };
+  const sendInvoice = useWrite<number, MailResult>(
+    async (id) => (await api.post<MailResult>(`/invoices/${id}/send`)).data,
+    { invalidate: [['invoices']] },
+  );
+
+  const creditNote = useWrite<number>(
+    async (id) => (await api.post(`/invoices/${id}/credit-note`, {})).data,
+    { invalidate: [['invoices'], ['dashboard']], success: 'Avoir émis' },
+  );
 
   const closeForm = () => {
     setCreating(false);
@@ -128,6 +122,9 @@ export function InvoicesPage() {
             date: editing.date.slice(0, 10),
             secondaryDate: editing.dueDate?.slice(0, 10) ?? '',
             notes: editing.notes ?? '',
+            version: editing.version,
+            currency: editing.currency,
+            exchangeRate: String(editing.exchangeRate),
             lines: toDraftLines(editing.lines ?? []),
           }
         : undefined,
@@ -138,6 +135,15 @@ export function InvoicesPage() {
     new Date(invoice.dueDate).getTime() < Date.now() &&
     ['UNPAID', 'PARTIALLY_PAID'].includes(invoice.status);
 
+  // Reste avoirable, calculé comme côté API : proposer « Avoir » sur une
+  // facture déjà entièrement avoirée ne mènerait qu'à un refus.
+  const creditable = (invoice: Invoice) => {
+    const credited = (invoice.creditNotes ?? [])
+      .filter((note) => note.status !== 'CANCELLED')
+      .reduce((sum, note) => sum + note.totalTTC, 0);
+    return invoice.totalTTC - credited;
+  };
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -147,7 +153,10 @@ export function InvoicesPage() {
           <>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                pagination.reset();
+              }}
               aria-label="Filtrer par statut"
               className="h-9 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm text-ink hover:border-line-strong focus:border-accent"
             >
@@ -175,7 +184,7 @@ export function InvoicesPage() {
             message={errorMessage(invoices.error)}
             onRetry={() => void invoices.refetch()}
           />
-        ) : (invoices.data?.length ?? 0) === 0 ? (
+        ) : invoices.items.length === 0 ? (
           <EmptyState
             icon={<Receipt size={26} />}
             title={status ? 'Aucun résultat' : 'Aucune facture'}
@@ -199,10 +208,15 @@ export function InvoicesPage() {
               </tr>
             </thead>
             <tbody>
-              {invoices.data?.map((invoice) => (
+              {invoices.items.map((invoice) => (
                 <Tr key={invoice.id} onClick={() => setOpenId(invoice.id)}>
                   <Td className="font-medium text-ink">
-                    {invoice.ref}
+                    <span className="inline-flex items-center gap-1.5">
+                      {invoice.ref}
+                      {invoice.type === 'CREDIT_NOTE' && (
+                        <Badge tone="serious">Avoir</Badge>
+                      )}
+                    </span>
                     {invoice.order && (
                       <span className="block text-[11px] text-ink-3">
                         depuis {invoice.order.ref}
@@ -214,10 +228,11 @@ export function InvoicesPage() {
                     <StatusBadge status={invoice.status} flow={INVOICE_FLOW} />
                   </Td>
                   <Td align="right" numeric className="font-medium text-ink">
-                    {money(invoice.totalTTC, true)}
+                    {invoice.type === 'CREDIT_NOTE' ? '−' : ''}
+                    {money(invoice.totalTTC, true, invoice.currency)}
                   </Td>
                   <Td align="right" numeric>
-                    {money(invoice.totalTTC - invoice.paidAmount, true)}
+                    {money(invoice.totalTTC - invoice.paidAmount, true, invoice.currency)}
                   </Td>
                   <Td align="right" numeric>
                     <span className="inline-flex items-center gap-1.5">
@@ -238,11 +253,59 @@ export function InvoicesPage() {
                         size="sm"
                         variant="ghost"
                         icon={<Download size={14} />}
-                        loading={downloading === invoice.id}
-                        onClick={() => void download(invoice)}
+                        loading={pdf.pendingId === invoice.id}
+                        onClick={() =>
+                          void pdf.download(
+                            `/invoices/${invoice.id}/pdf`,
+                            `${invoice.ref}.pdf`,
+                            invoice.id,
+                          )
+                        }
                       >
                         PDF
                       </Button>
+                      {!INVOICE_FLOW.editable.includes(invoice.status) &&
+                        invoice.status !== 'CANCELLED' &&
+                        can(P.invoicesUpdate) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<Mail size={14} />}
+                            loading={
+                              sendInvoice.isPending && sendInvoice.variables === invoice.id
+                            }
+                            onClick={() =>
+                              sendInvoice.mutate(invoice.id, {
+                                onSuccess: (result) =>
+                                  notify(
+                                    result.delivered
+                                      ? `Facture envoyée à ${result.to}`
+                                      : `Message préparé pour ${result.to} — aucun serveur SMTP configuré, rien n'a été envoyé`,
+                                    result.delivered ? 'success' : 'error',
+                                  ),
+                              })
+                            }
+                          >
+                            Envoyer
+                          </Button>
+                        )}
+                      {invoice.type === 'INVOICE' &&
+                        !INVOICE_FLOW.editable.includes(invoice.status) &&
+                        invoice.status !== 'CANCELLED' &&
+                        creditable(invoice) > 0 &&
+                        can(P.invoicesCreate) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<RotateCcw size={14} />}
+                            loading={
+                              creditNote.isPending && creditNote.variables === invoice.id
+                            }
+                            onClick={() => creditNote.mutate(invoice.id)}
+                          >
+                            Avoir
+                          </Button>
+                        )}
                       {INVOICE_FLOW.editable.includes(invoice.status) &&
                         can(P.invoicesUpdate) && (
                           <Button
@@ -270,6 +333,15 @@ export function InvoicesPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={invoices.page}
+          totalPages={invoices.totalPages}
+          total={invoices.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="factures"
+        />
       </Card>
 
       <DocumentFormModal
@@ -277,8 +349,9 @@ export function InvoicesPage() {
         title={editing ? `Modifier la facture ${editing.ref}` : 'Nouvelle facture'}
         partnerLabel="Client"
         secondaryDateLabel="Échéance"
-        partners={(partners.data ?? []).filter((p) => p.isActive && p.type !== 'SUPPLIER')}
+        partners={partners.data ?? []}
         products={products.data ?? []}
+        companyCurrency={companyCurrency}
         loading={save.isPending}
         initial={initialValues}
         onClose={closeForm}
@@ -292,6 +365,9 @@ export function InvoicesPage() {
                 dueDate: payload.secondaryDate,
                 notes: payload.notes,
                 lines: payload.lines,
+                version: payload.version,
+                currency: payload.currency,
+                exchangeRate: payload.exchangeRate,
               },
             },
             { onSuccess: closeForm },
@@ -343,12 +419,26 @@ export function InvoicesPage() {
                 totalVat={detail.data.totalVat}
                 totalTTC={detail.data.totalTTC}
                 vatBreakdown={detail.data.vatBreakdown}
+                currency={detail.data.currency}
                 paidAmount={detail.data.paidAmount}
                 remainingAmount={detail.data.remainingAmount}
               />
             </div>
 
+            {detail.data.creditedInvoice && (
+              <p className="rounded-lg bg-serious-soft px-3 py-2 text-[13px] text-ink-2">
+                Avoir corrigeant la facture {detail.data.creditedInvoice.ref}.
+              </p>
+            )}
+            {(detail.data.creditNotes?.length ?? 0) > 0 && (
+              <p className="rounded-lg bg-sunken px-3 py-2 text-[13px] text-ink-2">
+                Corrigée par {detail.data.creditNotes?.map((n) => n.ref).join(', ')}.
+              </p>
+            )}
+
             <PaymentsSection invoice={detail.data} onChanged={() => void detail.refetch()} />
+
+            <Attachments entity="INVOICE" entityId={detail.data.id} />
           </div>
         )}
       </Modal>

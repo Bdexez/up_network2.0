@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { useList, useWrite } from '../../lib/hooks';
+import { useList, usePage, usePagination, useWrite } from '../../lib/hooks';
 import { formatDate } from '../../lib/format';
 import { P } from '../../lib/permissions';
 import type { AppUser, Role } from '../../lib/types';
@@ -18,6 +18,7 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 
 const EMPTY = {
   email: '',
@@ -34,7 +35,8 @@ export function UsersPage() {
   const [editing, setEditing] = useState<AppUser | null>(null);
   const [deleting, setDeleting] = useState<AppUser | null>(null);
 
-  const users = useList<AppUser>(['users'], '/users');
+  const pagination = usePagination();
+  const users = usePage<AppUser>(['users'], '/users', pagination.params);
   const roles = useList<Role>(['roles'], '/roles');
 
   const remove = useWrite<number>(
@@ -61,7 +63,7 @@ export function UsersPage() {
           <Spinner />
         ) : users.isError ? (
           <ErrorState message={errorMessage(users.error)} onRetry={() => void users.refetch()} />
-        ) : (users.data?.length ?? 0) === 0 ? (
+        ) : users.items.length === 0 ? (
           <EmptyState icon={<Users size={26} />} title="Aucun utilisateur" />
         ) : (
           <TableWrap>
@@ -76,7 +78,7 @@ export function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.data?.map((user) => (
+              {users.items.map((user) => (
                 <Tr key={user.id}>
                   <Td>
                     <span className="font-medium text-ink">
@@ -127,6 +129,15 @@ export function UsersPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={users.page}
+          totalPages={users.totalPages}
+          total={users.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="utilisateurs"
+        />
       </Card>
 
       <UserForm

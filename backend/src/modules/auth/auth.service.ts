@@ -11,12 +11,14 @@ import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import type { JwtPayload } from 'src/common/types/authenticated-request';
+import { RefreshTokenService } from './refresh-token.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private refreshTokens: RefreshTokenService,
   ) {}
 
   /**
@@ -26,13 +28,14 @@ export class AuthService {
    *  - avec `companyCode` : on rattache l'utilisateur à une société existante,
    *    sans rôle. Un admin de cette société devra lui en donner un.
    */
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, userAgent?: string) {
     const [existingEmail, existingUsername] = await Promise.all([
       this.prisma.user.findUnique({ where: { email: dto.email } }),
       this.prisma.user.findUnique({ where: { username: dto.username } }),
     ]);
 
-    if (existingEmail) throw new ConflictException('Cet email est déjà utilisé');
+    if (existingEmail)
+      throw new ConflictException('Cet email est déjà utilisé');
     if (existingUsername)
       throw new ConflictException("Ce nom d'utilisateur est déjà pris");
 
@@ -83,7 +86,10 @@ export class AuthService {
         const company = await tx.company.create({
           data: {
             name: dto.companyName?.trim() || `${dto.username} SARL`,
-            code: await this.generateCompanyCode(tx, dto.companyName ?? dto.username),
+            code: await this.generateCompanyCode(
+              tx,
+              dto.companyName ?? dto.username,
+            ),
           },
         });
 
@@ -126,10 +132,17 @@ export class AuthService {
       },
     );
 
-    return this.buildSession(user.id, user.email, user.username, companyId, roleId);
+    return this.buildSession(
+      user.id,
+      user.email,
+      user.username,
+      companyId,
+      roleId,
+      userAgent,
+    );
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, userAgent?: string) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -149,6 +162,7 @@ export class AuthService {
       user.username,
       link.companyId,
       link.roleId,
+      userAgent,
     );
   }
 
@@ -281,6 +295,7 @@ export class AuthService {
     username: string,
     companyId: number,
     roleId: number | null,
+    userAgent?: string,
   ) {
     const payload: JwtPayload = {
       sub: userId,
@@ -290,10 +305,62 @@ export class AuthService {
       roleId,
     };
 
+    const refresh = await this.refreshTokens.issue(
+      userId,
+      companyId,
+      userAgent,
+    );
+
     return {
       accessToken: this.jwtService.sign(payload),
+      refreshToken: refresh.token,
+      refreshTokenExpiresAt: refresh.expiresAt,
       user: await this.getProfile(userId, companyId),
     };
+  }
+
+  /**
+   * Renouvelle la paire de jetons. Le jeton d'accès est volontairement court :
+   * c'est le rafraîchissement, révocable, qui porte la durée de la session.
+   */
+  async refresh(refreshToken: string, userAgent?: string) {
+    const rotated = await this.refreshTokens.rotate(refreshToken, userAgent);
+
+    const link = await this.prisma.userCompany.findUnique({
+      where: {
+        userId_companyId: {
+          userId: rotated.userId,
+          companyId: rotated.companyId,
+        },
+      },
+      include: { user: true },
+    });
+
+    if (!link || !link.user.isActive) {
+      await this.refreshTokens.revokeAllForUser(rotated.userId);
+      throw new UnauthorizedException('Compte ou société inaccessible');
+    }
+
+    const payload: JwtPayload = {
+      sub: link.user.id,
+      email: link.user.email,
+      username: link.user.username,
+      companyId: rotated.companyId,
+      roleId: link.roleId,
+    };
+
+    return {
+      accessToken: this.jwtService.sign(payload),
+      refreshToken: rotated.token,
+      refreshTokenExpiresAt: rotated.expiresAt,
+      user: await this.getProfile(link.user.id, rotated.companyId),
+    };
+  }
+
+  /** Déconnexion : on révoque le jeton présenté, pas toute la session. */
+  async logout(refreshToken?: string) {
+    if (refreshToken) await this.refreshTokens.revoke(refreshToken);
+    return { message: 'Session fermée' };
   }
 
   /** Code société court, unique, dérivé du nom (DEMOCORP, DEMOCORP2, ...). */

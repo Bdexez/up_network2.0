@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Contact, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useDebounced, useList, useWrite } from '../lib/hooks';
+import { useDebounced, usePage, usePagination, useWrite } from '../lib/hooks';
 import { formatDate } from '../lib/format';
 import { PARTNER_TYPE_LABEL } from '../lib/labels';
 import { P } from '../lib/permissions';
@@ -20,6 +21,7 @@ import {
   Spinner,
 } from '../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../components/ui/Table';
+import { Pagination } from '../components/ui/Pagination';
 
 const EMPTY = {
   name: '',
@@ -32,27 +34,32 @@ const EMPTY = {
   country: '',
   website: '',
   vatNumber: '',
+  paymentTermsDays: '',
 };
 
 export function PartnersPage() {
   const { can } = useAuth();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounced(search);
   const [editing, setEditing] = useState<Partner | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Partner | null>(null);
 
-  const partners = useList<Partner>(
-    ['partners'],
-    '/partners',
-    debouncedSearch ? { search: debouncedSearch } : undefined,
-  );
+  const pagination = usePagination();
+  const partners = usePage<Partner>(['partners'], '/partners', {
+    ...pagination.params,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  });
 
   const save = useWrite<{ id?: number; body: typeof EMPTY }>(
     async ({ id, body }) => {
-      const payload = Object.fromEntries(
+      const payload: Record<string, unknown> = Object.fromEntries(
         Object.entries(body).filter(([, value]) => value !== ''),
       );
+      if (body.paymentTermsDays !== '') {
+        payload.paymentTermsDays = Number(body.paymentTermsDays);
+      }
       if (id) return (await api.patch(`/partners/${id}`, payload)).data;
       return (await api.post('/partners', payload)).data;
     },
@@ -78,7 +85,14 @@ export function PartnersPage() {
         description="Vos clients et fournisseurs."
         actions={
           <>
-            <SearchInput value={search} onChange={setSearch} placeholder="Nom, e-mail, ville…" />
+            <SearchInput
+              value={search}
+              onChange={(value) => {
+                setSearch(value);
+                pagination.reset();
+              }}
+              placeholder="Nom, e-mail, ville, TVA…"
+            />
             {can(P.partnersCreate) && (
               <Button
                 variant="primary"
@@ -100,7 +114,7 @@ export function PartnersPage() {
             message={String(partners.error)}
             onRetry={() => void partners.refetch()}
           />
-        ) : (partners.data?.length ?? 0) === 0 ? (
+        ) : partners.items.length === 0 ? (
           <EmptyState
             icon={<Contact size={26} />}
             title={search ? 'Aucun résultat' : 'Aucun client'}
@@ -131,8 +145,8 @@ export function PartnersPage() {
               </tr>
             </thead>
             <tbody>
-              {partners.data?.map((partner) => (
-                <Tr key={partner.id}>
+              {partners.items.map((partner) => (
+                <Tr key={partner.id} onClick={() => navigate(`/clients/${partner.id}`)}>
                   <Td>
                     <span className="font-medium text-ink">{partner.name}</span>
                     {!partner.isActive && (
@@ -162,7 +176,10 @@ export function PartnersPage() {
                     {formatDate(partner.createdAt)}
                   </Td>
                   <Td align="right">
-                    <div className="flex justify-end gap-1">
+                    <div
+                      className="flex justify-end gap-1"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       {can(P.partnersUpdate) && (
                         <Button
                           size="sm"
@@ -188,6 +205,15 @@ export function PartnersPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={partners.page}
+          totalPages={partners.totalPages}
+          total={partners.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="tiers"
+        />
       </Card>
 
       <PartnerForm
@@ -251,6 +277,8 @@ function PartnerForm({
             country: partner.country ?? '',
             website: partner.website ?? '',
             vatNumber: partner.vatNumber ?? '',
+            paymentTermsDays:
+              partner.paymentTermsDays === null ? '' : String(partner.paymentTermsDays),
           }
         : EMPTY,
     );
@@ -306,6 +334,15 @@ function PartnerForm({
           hint="Repris sur les factures"
           value={form.vatNumber}
           onChange={update('vatNumber')}
+        />
+        <Input
+          label="Délai de règlement (jours)"
+          type="number"
+          min="0"
+          max="365"
+          hint="Vide = délai de la société"
+          value={form.paymentTermsDays}
+          onChange={update('paymentTermsDays')}
         />
         <div className="sm:col-span-2">
           <Input label="Site web" value={form.website} onChange={update('website')} />

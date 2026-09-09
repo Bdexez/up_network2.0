@@ -69,6 +69,15 @@ export class RolesService {
     });
     if (!role) throw new NotFoundException('Rôle introuvable');
 
+    // Retirer une permission au rôle Admin enfermerait la société dehors :
+    // plus personne ne pourrait rouvrir l'écran des rôles pour la remettre.
+    // Le libellé reste modifiable, le périmètre non.
+    if (role.isSystemRole && data.permissionIds) {
+      throw new BadRequestException(
+        `« ${role.name} » est un rôle système : ses permissions ne peuvent pas être modifiées. Créez un rôle dédié pour un périmètre restreint.`,
+      );
+    }
+
     if (data.name && data.name !== role.name) {
       const taken = await this.prisma.role.findUnique({
         where: { name_companyId: { name: data.name, companyId } },

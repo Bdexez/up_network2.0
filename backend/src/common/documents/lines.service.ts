@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { DocumentLineDto } from 'src/common/dto/document-line.dto';
 import { computeDocumentTotals, computeLineTotals } from './totals';
@@ -41,11 +45,15 @@ export class DocumentLinesService {
     { useCostPrice = false }: { useCostPrice?: boolean } = {},
   ): Promise<BuiltDocument> {
     if (lines.length === 0) {
-      throw new BadRequestException('Le document doit comporter au moins une ligne');
+      throw new BadRequestException(
+        'Le document doit comporter au moins une ligne',
+      );
     }
 
     const productIds = [
-      ...new Set(lines.map((line) => line.productId).filter((id): id is number => !!id)),
+      ...new Set(
+        lines.map((line) => line.productId).filter((id): id is number => !!id),
+      ),
     ];
 
     const products = await this.prisma.product.findMany({
@@ -58,10 +66,14 @@ export class DocumentLinesService {
       );
     }
 
-    const productById = new Map(products.map((product) => [product.id, product]));
+    const productById = new Map(
+      products.map((product) => [product.id, product]),
+    );
 
     const persistable = lines.map((line, index) => {
-      const product = line.productId ? productById.get(line.productId) : undefined;
+      const product = line.productId
+        ? productById.get(line.productId)
+        : undefined;
 
       const label = line.label?.trim() || product?.name;
       if (!label) {

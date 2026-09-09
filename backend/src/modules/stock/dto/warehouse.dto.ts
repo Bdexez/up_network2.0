@@ -1,10 +1,4 @@
-import { PartialType } from '@nestjs/mapped-types';
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateWarehouseDto {
   @IsString()
@@ -37,4 +31,35 @@ export class CreateWarehouseDto {
   isActive?: boolean;
 }
 
-export class UpdateWarehouseDto extends PartialType(CreateWarehouseDto) {}
+/** Tous les champs sont facultatifs : seuls ceux fournis sont modifiés. */
+export class UpdateWarehouseDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

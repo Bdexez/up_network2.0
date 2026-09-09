@@ -6,7 +6,12 @@ import { useList, useWrite } from '../../lib/hooks';
 import { formatDate, money } from '../../lib/format';
 import { STAGE_COLOR, STAGE_LABEL, STAGE_ORDER } from '../../lib/labels';
 import { P } from '../../lib/permissions';
-import type { Opportunity, OpportunityStage, PipelineColumn, Partner } from '../../lib/types';
+import type {
+  Opportunity,
+  OpportunityStage,
+  PartnerOption,
+  PipelineColumn,
+} from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea } from '../../components/ui/Field';
@@ -241,7 +246,11 @@ function OpportunityForm({
   opportunity: Opportunity | null;
   onClose: () => void;
 }) {
-  const partners = useList<Partner>(['partners'], '/partners');
+  const partners = useList<PartnerOption>(
+    ['partner-options', 'customer'],
+    '/partners/options',
+    { type: 'CUSTOMER' },
+  );
   const [form, setForm] = useState(EMPTY);
 
   useEffect(() => {

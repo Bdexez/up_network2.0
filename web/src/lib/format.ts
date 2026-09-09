@@ -1,21 +1,38 @@
-const currencyFormatter = new Intl.NumberFormat('fr-FR', {
-  style: 'currency',
-  currency: 'EUR',
-  maximumFractionDigits: 0,
-});
-
-const preciseCurrency = new Intl.NumberFormat('fr-FR', {
-  style: 'currency',
-  currency: 'EUR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 const numberFormatter = new Intl.NumberFormat('fr-FR');
 
-export function money(value: number | null | undefined, precise = false) {
-  const amount = value ?? 0;
-  return precise ? preciseCurrency.format(amount) : currencyFormatter.format(amount);
+/**
+ * Les formateurs Intl sont coûteux à créer : on les mémorise par devise et
+ * précision plutôt que d'en instancier un à chaque cellule de tableau.
+ */
+const formatters = new Map<string, Intl.NumberFormat>();
+
+function currencyFormatter(currency: string, precise: boolean) {
+  const key = `${currency}:${precise}`;
+  let formatter = formatters.get(key);
+
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: precise ? 2 : 0,
+      maximumFractionDigits: precise ? 2 : 0,
+    });
+    formatters.set(key, formatter);
+  }
+
+  return formatter;
+}
+
+/**
+ * Montant formaté. La devise par défaut est l'euro ; les documents libellés
+ * dans une autre devise passent la leur pour que le symbole soit juste.
+ */
+export function money(
+  value: number | null | undefined,
+  precise = false,
+  currency = 'EUR',
+) {
+  return currencyFormatter(currency, precise).format(value ?? 0);
 }
 
 export function count(value: number | null | undefined) {

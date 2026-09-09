@@ -3,8 +3,15 @@ import { DocumentType, OrderStatus, Prisma, QuoteStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { DocumentLinesService } from 'src/common/documents/lines.service';
 import { NumberingService } from 'src/common/documents/numbering.service';
-import { assertEditable, assertTransition } from 'src/common/documents/workflow';
+import {
+  assertEditable,
+  assertTransition,
+} from 'src/common/documents/workflow';
+import { assertVersion } from 'src/common/documents/optimistic-lock';
 import { computeDocumentTotals } from 'src/common/documents/totals';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
+import { resolveCurrency, toBaseAmounts } from 'src/common/documents/currency';
+import { DocumentPdfService } from 'src/common/documents/document-pdf.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 import {
@@ -26,11 +33,14 @@ export class QuotesService {
     private prisma: PrismaService,
     private numbering: NumberingService,
     private linesService: DocumentLinesService,
+    private pdfService: DocumentPdfService,
   ) {}
 
   async create(companyId: number, userId: number, dto: CreateQuoteDto) {
     await this.assertPartner(companyId, dto.partnerId);
     const built = await this.linesService.build(companyId, dto.lines);
+
+    const money = await this.resolveDocumentCurrency(companyId, dto, built);
 
     return this.prisma.$transaction(async (tx) => {
       const ref = await this.numbering.next(tx, companyId, DocumentType.QUOTE);
@@ -47,6 +57,7 @@ export class QuotesService {
           totalHT: built.totalHT,
           totalVat: built.totalVat,
           totalTTC: built.totalTTC,
+          ...money,
           lines: { create: built.lines },
         },
         include: QUOTE_INCLUDE,
@@ -54,16 +65,26 @@ export class QuotesService {
     });
   }
 
-  findAll(companyId: number, filters: { status?: QuoteStatus; partnerId?: number }) {
+  findAll(
+    companyId: number,
+    filters: { status?: QuoteStatus; partnerId?: number } & PageParams,
+  ) {
     const where: Prisma.QuoteWhereInput = { companyId };
     if (filters.status) where.status = filters.status;
     if (filters.partnerId) where.partnerId = filters.partnerId;
 
-    return this.prisma.quote.findMany({
-      where,
-      include: QUOTE_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.quote.findMany({
+          where,
+          include: QUOTE_INCLUDE,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.quote.count({ where }),
+      ]),
+    );
   }
 
   async findOne(companyId: number, id: number) {
@@ -72,12 +93,16 @@ export class QuotesService {
       include: QUOTE_INCLUDE,
     });
     if (!quote) throw new NotFoundException('Devis introuvable');
-    return { ...quote, vatBreakdown: computeDocumentTotals(quote.lines).vatBreakdown };
+    return {
+      ...quote,
+      vatBreakdown: computeDocumentTotals(quote.lines).vatBreakdown,
+    };
   }
 
   async update(companyId: number, id: number, dto: UpdateQuoteDto) {
     const quote = await this.findOne(companyId, id);
     assertEditable(quote.status, QUOTE_EDITABLE, QUOTE_STATUS_LABEL);
+    assertVersion(quote, dto.version);
 
     if (dto.partnerId) await this.assertPartner(companyId, dto.partnerId);
 
@@ -97,6 +122,7 @@ export class QuotesService {
       return tx.quote.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           partnerId: dto.partnerId,
           date: dto.date ? new Date(dto.date) : undefined,
           validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
@@ -106,6 +132,7 @@ export class QuotesService {
                 totalHT: built.totalHT,
                 totalVat: built.totalVat,
                 totalTTC: built.totalTTC,
+                ...toBaseAmounts(built, quote.exchangeRate),
               }
             : {}),
         },
@@ -116,11 +143,16 @@ export class QuotesService {
 
   async changeStatus(companyId: number, id: number, status: QuoteStatus) {
     const quote = await this.findOne(companyId, id);
-    assertTransition(quote.status, status, QUOTE_TRANSITIONS, QUOTE_STATUS_LABEL);
+    assertTransition(
+      quote.status,
+      status,
+      QUOTE_TRANSITIONS,
+      QUOTE_STATUS_LABEL,
+    );
 
     return this.prisma.quote.update({
       where: { id },
-      data: { status },
+      data: { status, version: { increment: 1 } },
       include: QUOTE_INCLUDE,
     });
   }
@@ -156,6 +188,10 @@ export class QuotesService {
           totalHT: built.totalHT,
           totalVat: built.totalVat,
           totalTTC: built.totalTTC,
+          // La commande hérite de la devise et du taux acceptés au devis.
+          currency: quote.currency,
+          exchangeRate: quote.exchangeRate,
+          ...toBaseAmounts(built, quote.exchangeRate),
           lines: { create: built.lines },
         },
         include: {
@@ -173,12 +209,68 @@ export class QuotesService {
     });
   }
 
+  /**
+   * PDF rendu à la volée : un devis reste modifiable, servir un fichier figé
+   * risquerait d'envoyer une version périmée.
+   */
+  async renderPdf(companyId: number, id: number) {
+    const quote = await this.findOne(companyId, id);
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+    });
+    const partner = await this.prisma.partner.findUniqueOrThrow({
+      where: { id: quote.partnerId },
+    });
+
+    const buffer = await this.pdfService.build({
+      kind: 'QUOTE',
+      companyId,
+      ref: quote.ref,
+      date: quote.date,
+      secondaryDate: quote.validUntil,
+      notes: quote.notes,
+      issuer: company,
+      recipient: partner,
+      lines: quote.lines,
+      vatBreakdown: quote.vatBreakdown,
+      totalHT: quote.totalHT,
+      totalVat: quote.totalVat,
+      totalTTC: quote.totalTTC,
+    });
+
+    return { buffer, fileName: `${quote.ref}.pdf` };
+  }
+
   async remove(companyId: number, id: number) {
     const quote = await this.findOne(companyId, id);
     assertEditable(quote.status, QUOTE_EDITABLE, QUOTE_STATUS_LABEL);
 
     await this.prisma.quote.delete({ where: { id } });
     return { message: `Devis ${quote.ref} supprimé` };
+  }
+
+  /**
+   * Devise du document et montants convertis. La devise société sert de
+   * référence : c'est dans celle-ci que les états consolidés s'additionnent.
+   */
+  private async resolveDocumentCurrency(
+    companyId: number,
+    dto: { currency?: string; exchangeRate?: number },
+    totals?: { totalHT: number; totalTTC: number },
+  ) {
+    const company = await this.prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { currency: true },
+    });
+
+    const context = resolveCurrency(company.currency, dto);
+    return {
+      ...context,
+      ...toBaseAmounts(
+        totals ?? { totalHT: 0, totalTTC: 0 },
+        context.exchangeRate,
+      ),
+    };
   }
 
   private async assertPartner(companyId: number, partnerId: number) {

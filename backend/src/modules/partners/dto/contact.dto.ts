@@ -1,4 +1,3 @@
-import { PartialType } from '@nestjs/mapped-types';
 import {
   IsBoolean,
   IsEmail,
@@ -36,4 +35,32 @@ export class CreateContactDto {
   isPrimary?: boolean;
 }
 
-export class UpdateContactDto extends PartialType(CreateContactDto) {}
+/** Tous les champs sont facultatifs : seuls ceux fournis sont modifiés. */
+export class UpdateContactDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  role?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrimary?: boolean;
+}

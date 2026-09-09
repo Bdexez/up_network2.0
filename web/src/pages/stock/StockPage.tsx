@@ -8,7 +8,7 @@ import {
 
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { useDebounced, useList, useWrite } from '../../lib/hooks';
+import { useDebounced, useList, usePage, usePagination, useWrite } from '../../lib/hooks';
 import { count, formatDateTime, money } from '../../lib/format';
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPE_TONE } from '../../lib/documents';
 import { P } from '../../lib/permissions';
@@ -28,6 +28,7 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 
 type Tab = 'levels' | 'movements';
 
@@ -43,37 +44,47 @@ export function StockPage() {
 
   const warehouses = useList<Warehouse>(['warehouses'], '/stock/warehouses');
 
-  const levelParams: Record<string, string> = {};
-  if (debouncedSearch) levelParams.search = debouncedSearch;
-  if (warehouseId) levelParams.warehouseId = warehouseId;
-  if (belowAlert) levelParams.belowAlert = 'true';
+  const levelsPage = usePagination();
+  const movementsPage = usePagination();
 
-  const levels = useList<StockLevel>(
-    ['stock', 'levels'],
-    '/stock/levels',
-    Object.keys(levelParams).length ? levelParams : undefined,
-  );
+  const levels = usePage<StockLevel>(['stock', 'levels'], '/stock/levels', {
+    ...levelsPage.params,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(warehouseId ? { warehouseId } : {}),
+    ...(belowAlert ? { belowAlert: 'true' } : {}),
+  });
 
-  const movements = useList<StockMovement>(
-    ['stock', 'movements'],
-    '/stock/movements',
-    warehouseId ? { warehouseId, limit: '100' } : { limit: '100' },
-  );
+  const movements = usePage<StockMovement>(['stock', 'movements'], '/stock/movements', {
+    ...movementsPage.params,
+    ...(warehouseId ? { warehouseId } : {}),
+  });
 
-  const totalValue = (levels.data ?? []).reduce((acc, row) => acc + row.value, 0);
-  const alerts = (levels.data ?? []).filter((row) => row.belowAlert).length;
+  // Compteurs calculés sur la page affichée ; le total global vient de l'API.
+  const totalValue = levels.items.reduce((acc, row) => acc + row.value, 0);
+  const alerts = levels.items.filter((row) => row.belowAlert).length;
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Stock"
-        description={`${count(levels.data?.length)} référence(s) suivie(s) · valorisation ${money(totalValue)}.`}
+        description={`${count(levels.total)} référence(s) suivie(s) · ${money(totalValue)} sur cette page.`}
         actions={
           <>
-            <SearchInput value={search} onChange={setSearch} placeholder="Produit ou référence…" />
+            <SearchInput
+              value={search}
+              onChange={(value) => {
+                setSearch(value);
+                levelsPage.reset();
+              }}
+              placeholder="Produit ou référence…"
+            />
             <select
               value={warehouseId}
-              onChange={(event) => setWarehouseId(event.target.value)}
+              onChange={(event) => {
+                setWarehouseId(event.target.value);
+                levelsPage.reset();
+                movementsPage.reset();
+              }}
               aria-label="Filtrer par entrepôt"
               className="h-9 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm text-ink hover:border-line-strong focus:border-accent"
             >
@@ -91,7 +102,10 @@ export function StockPage() {
       {alerts > 0 && !belowAlert && (
         <button
           type="button"
-          onClick={() => setBelowAlert(true)}
+          onClick={() => {
+            setBelowAlert(true);
+            levelsPage.reset();
+          }}
           className="flex items-center gap-2.5 rounded-xl border border-line bg-serious-soft px-4 py-3 text-left transition-colors hover:border-line-strong"
         >
           <TriangleAlert size={17} className="shrink-0 text-serious" aria-hidden />
@@ -114,7 +128,10 @@ export function StockPage() {
         {belowAlert && (
           <button
             type="button"
-            onClick={() => setBelowAlert(false)}
+            onClick={() => {
+              setBelowAlert(false);
+              levelsPage.reset();
+            }}
             className="ml-auto pb-2 text-[13px] font-medium text-accent hover:underline"
           >
             Voir toutes les références
@@ -131,7 +148,7 @@ export function StockPage() {
               message={errorMessage(levels.error)}
               onRetry={() => void levels.refetch()}
             />
-          ) : (levels.data?.length ?? 0) === 0 ? (
+          ) : levels.items.length === 0 ? (
             <EmptyState
               icon={<Boxes size={26} />}
               title={belowAlert ? 'Aucune alerte' : 'Aucun produit suivi'}
@@ -154,7 +171,7 @@ export function StockPage() {
                 </tr>
               </thead>
               <tbody>
-                {levels.data?.map((row) => (
+                {levels.items.map((row) => (
                   <Tr key={row.productId}>
                     <Td>
                       <span className="font-medium text-ink">{row.name}</span>
@@ -216,6 +233,15 @@ export function StockPage() {
               </tbody>
             </TableWrap>
           )}
+
+          <Pagination
+            page={levels.page}
+            totalPages={levels.totalPages}
+            total={levels.total}
+            perPage={levelsPage.perPage}
+            onChange={levelsPage.setPage}
+            label="références"
+          />
         </Card>
       ) : (
         <Card>
@@ -225,7 +251,7 @@ export function StockPage() {
           />
           {movements.isLoading ? (
             <Spinner />
-          ) : (movements.data?.length ?? 0) === 0 ? (
+          ) : movements.items.length === 0 ? (
             <EmptyState title="Aucun mouvement" />
           ) : (
             <TableWrap>
@@ -241,7 +267,7 @@ export function StockPage() {
                 </tr>
               </thead>
               <tbody>
-                {movements.data?.map((movement) => (
+                {movements.items.map((movement) => (
                   <Tr key={movement.id}>
                     <Td numeric>{formatDateTime(movement.createdAt)}</Td>
                     <Td>
@@ -279,6 +305,15 @@ export function StockPage() {
               </tbody>
             </TableWrap>
           )}
+
+          <Pagination
+            page={movements.page}
+            totalPages={movements.totalPages}
+            total={movements.total}
+            perPage={movementsPage.perPage}
+            onChange={movementsPage.setPage}
+            label="mouvements"
+          />
         </Card>
       )}
 

@@ -14,7 +14,10 @@ import {
   QuoteStatus,
   StockMovementType,
 } from '@prisma/client';
-import { computeDocumentTotals, computeLineTotals } from '../src/common/documents/totals';
+import {
+  computeDocumentTotals,
+  computeLineTotals,
+} from '../src/common/documents/totals';
 import * as bcrypt from 'bcrypt';
 import {
   PERMISSION_CATALOG,
@@ -67,6 +70,36 @@ async function main() {
   }
   const allPermissions = await prisma.permission.findMany();
   console.log(`✅ ${allPermissions.length} permissions`);
+
+  // 1 bis. Rattrapage des rôles système déjà en base.
+  // Le rôle « Admin » d'une société créée à l'inscription fige les permissions
+  // existantes ce jour-là. Sans ce rattrapage, un module ajouté ensuite
+  // resterait invisible pour l'administrateur de cette société — le menu
+  // n'apparaîtrait tout simplement pas.
+  const systemRoles = await prisma.role.findMany({
+    where: { isSystemRole: true },
+    select: { id: true, permissions: { select: { permissionId: true } } },
+  });
+
+  let added = 0;
+  for (const role of systemRoles) {
+    const held = new Set(role.permissions.map((p) => p.permissionId));
+    const missing = allPermissions.filter((p) => !held.has(p.id));
+    if (missing.length === 0) continue;
+
+    await prisma.rolePermission.createMany({
+      data: missing.map((permission) => ({
+        roleId: role.id,
+        permissionId: permission.id,
+        granted: true,
+      })),
+      skipDuplicates: true,
+    });
+    added += missing.length;
+  }
+  console.log(
+    `✅ ${systemRoles.length} rôle(s) système à jour (${added} permission(s) ajoutée(s))`,
+  );
 
   // 2. Société de démonstration
   const company = await prisma.company.upsert({
@@ -153,7 +186,11 @@ async function main() {
     const passwordHash = await bcrypt.hash(entry.password, 10);
     const user = await prisma.user.upsert({
       where: { email: entry.email },
-      update: { passwordHash, firstName: entry.firstName, lastName: entry.lastName },
+      update: {
+        passwordHash,
+        firstName: entry.firstName,
+        lastName: entry.lastName,
+      },
       create: {
         email: entry.email,
         username: entry.username,
@@ -188,7 +225,9 @@ async function main() {
   });
 
   if (existingPartners > 0 && !fresh) {
-    console.log('ℹ️  Données de démo déjà présentes (relancez avec --fresh pour les remplacer).');
+    console.log(
+      'ℹ️  Données de démo déjà présentes (relancez avec --fresh pour les remplacer).',
+    );
     console.log('\n🌱 Seed terminé.\n');
     printCredentials(users);
     return;
@@ -200,18 +239,26 @@ async function main() {
     await prisma.activity.deleteMany({ where: { companyId: company.id } });
     await prisma.opportunity.deleteMany({ where: { companyId: company.id } });
     await prisma.lead.deleteMany({ where: { companyId: company.id } });
-    await prisma.payment.deleteMany({ where: { invoice: { companyId: company.id } } });
+    await prisma.payment.deleteMany({
+      where: { invoice: { companyId: company.id } },
+    });
     await prisma.invoice.deleteMany({ where: { companyId: company.id } });
     await prisma.order.deleteMany({ where: { companyId: company.id } });
     await prisma.quote.deleteMany({ where: { companyId: company.id } });
     await prisma.purchaseOrder.deleteMany({ where: { companyId: company.id } });
     await prisma.stockMovement.deleteMany({ where: { companyId: company.id } });
-    await prisma.stock.deleteMany({ where: { warehouse: { companyId: company.id } } });
+    await prisma.stock.deleteMany({
+      where: { warehouse: { companyId: company.id } },
+    });
     await prisma.warehouse.deleteMany({ where: { companyId: company.id } });
     await prisma.product.deleteMany({ where: { companyId: company.id } });
-    await prisma.contact.deleteMany({ where: { partner: { companyId: company.id } } });
+    await prisma.contact.deleteMany({
+      where: { partner: { companyId: company.id } },
+    });
     await prisma.partner.deleteMany({ where: { companyId: company.id } });
-    await prisma.documentCounter.deleteMany({ where: { companyId: company.id } });
+    await prisma.documentCounter.deleteMany({
+      where: { companyId: company.id },
+    });
     console.log('🧹 Anciennes données de démo supprimées');
   }
 
@@ -237,17 +284,93 @@ async function main() {
 
   // --- 6. Catalogue ---------------------------------------------------------
   const productSeeds = [
-    { name: 'Licence ERP — Starter', sku: 'ERP-START', price: 490, costPrice: 120, type: ProductType.SERVICE, manageStock: false, description: 'Abonnement annuel, 5 utilisateurs' },
-    { name: 'Licence ERP — Business', sku: 'ERP-BIZ', price: 1290, costPrice: 320, type: ProductType.SERVICE, manageStock: false, description: 'Abonnement annuel, 25 utilisateurs' },
-    { name: 'Module CRM avancé', sku: 'MOD-CRM', price: 350, costPrice: 90, type: ProductType.SERVICE, manageStock: false, description: 'Pipeline, scoring, relances' },
-    { name: 'Journée de formation', sku: 'SRV-FORM', price: 890, costPrice: 400, type: ProductType.SERVICE, manageStock: false, description: 'Sur site, 7 heures' },
-    { name: 'Terminal code-barres', sku: 'MAT-TERM', price: 640, costPrice: 380, type: ProductType.PRODUCT, manageStock: true, stockAlert: 5, description: 'Douchette sans fil, socle inclus' },
-    { name: 'Imprimante étiquettes', sku: 'MAT-IMPR', price: 320, costPrice: 175, type: ProductType.PRODUCT, manageStock: true, stockAlert: 4, description: 'Thermique 203 dpi' },
-    { name: 'Rouleau étiquettes (x10)', sku: 'CON-ETIQ', price: 45, costPrice: 18, type: ProductType.PRODUCT, manageStock: true, stockAlert: 20, description: 'Boîte de 10 rouleaux' },
-    { name: 'Support premium', sku: 'SRV-SUP', price: 240, costPrice: 60, type: ProductType.SERVICE, manageStock: false, description: 'Astreinte 24/7, par mois' },
+    {
+      name: 'Licence ERP — Starter',
+      sku: 'ERP-START',
+      price: 490,
+      costPrice: 120,
+      type: ProductType.SERVICE,
+      manageStock: false,
+      description: 'Abonnement annuel, 5 utilisateurs',
+    },
+    {
+      name: 'Licence ERP — Business',
+      sku: 'ERP-BIZ',
+      price: 1290,
+      costPrice: 320,
+      type: ProductType.SERVICE,
+      manageStock: false,
+      description: 'Abonnement annuel, 25 utilisateurs',
+    },
+    {
+      name: 'Module CRM avancé',
+      sku: 'MOD-CRM',
+      price: 350,
+      costPrice: 90,
+      type: ProductType.SERVICE,
+      manageStock: false,
+      description: 'Pipeline, scoring, relances',
+    },
+    {
+      name: 'Journée de formation',
+      sku: 'SRV-FORM',
+      price: 890,
+      costPrice: 400,
+      type: ProductType.SERVICE,
+      manageStock: false,
+      description: 'Sur site, 7 heures',
+    },
+    {
+      name: 'Terminal code-barres',
+      sku: 'MAT-TERM',
+      price: 640,
+      costPrice: 380,
+      type: ProductType.PRODUCT,
+      manageStock: true,
+      stockAlert: 5,
+      description: 'Douchette sans fil, socle inclus',
+    },
+    {
+      name: 'Imprimante étiquettes',
+      sku: 'MAT-IMPR',
+      price: 320,
+      costPrice: 175,
+      type: ProductType.PRODUCT,
+      manageStock: true,
+      stockAlert: 4,
+      description: 'Thermique 203 dpi',
+    },
+    {
+      name: 'Rouleau étiquettes (x10)',
+      sku: 'CON-ETIQ',
+      price: 45,
+      costPrice: 18,
+      type: ProductType.PRODUCT,
+      manageStock: true,
+      stockAlert: 20,
+      description: 'Boîte de 10 rouleaux',
+    },
+    {
+      name: 'Support premium',
+      sku: 'SRV-SUP',
+      price: 240,
+      costPrice: 60,
+      type: ProductType.SERVICE,
+      manageStock: false,
+      description: 'Astreinte 24/7, par mois',
+    },
   ];
 
-  const products: Record<string, { id: number; price: number; costPrice: number; vatRate: number; name: string }> = {};
+  const products: Record<
+    string,
+    {
+      id: number;
+      price: number;
+      costPrice: number;
+      vatRate: number;
+      name: string;
+    }
+  > = {};
   for (const seed of productSeeds) {
     const product = await prisma.product.create({
       data: { ...seed, companyId: company.id, vatRate: 20 },
@@ -291,12 +414,86 @@ async function main() {
 
   // --- 8. Tiers et contacts -------------------------------------------------
   const partnerSeeds = [
-    { name: 'Boulangerie Lefèvre', email: 'contact@lefevre.fr', phone: '01 42 88 12 03', zipCode: '75012', city: 'Paris', country: 'France', type: PartnerType.CUSTOMER, vatNumber: 'FR11223344556', contact: { firstName: 'Marc', lastName: 'Lefèvre', role: 'Gérant', email: 'm.lefevre@lefevre.fr' } },
-    { name: 'Atelier Novak', email: 'hello@novak-atelier.fr', phone: '04 78 55 21 90', zipCode: '69003', city: 'Lyon', country: 'France', type: PartnerType.CUSTOMER, contact: { firstName: 'Ivana', lastName: 'Novak', role: 'Directrice', email: 'i.novak@novak-atelier.fr' } },
-    { name: 'Groupe Vartex', email: 'achats@vartex.com', phone: '05 61 22 04 77', zipCode: '31000', city: 'Toulouse', country: 'France', type: PartnerType.BOTH, vatNumber: 'FR99887766554', contact: { firstName: 'Hugo', lastName: 'Lemoine', role: 'Responsable achats', email: 'h.lemoine@vartex.com' } },
-    { name: 'Studio Kanto', email: 'team@kanto.studio', phone: '02 40 19 63 12', zipCode: '44000', city: 'Nantes', country: 'France', type: PartnerType.CUSTOMER, contact: { firstName: 'Lise', lastName: 'Marchand', role: 'Office manager' } },
-    { name: 'Fournitures Bréval', email: 'ventes@breval.fr', phone: '03 20 45 78 01', zipCode: '59000', city: 'Lille', country: 'France', type: PartnerType.SUPPLIER, contact: { firstName: 'Serge', lastName: 'Bréval', role: 'Commercial' } },
-    { name: 'Nordic Hardware AB', email: 'sales@nordic-hw.se', phone: '+46 8 555 010', zipCode: '11122', city: 'Stockholm', country: 'Suède', type: PartnerType.SUPPLIER },
+    {
+      name: 'Boulangerie Lefèvre',
+      email: 'contact@lefevre.fr',
+      phone: '01 42 88 12 03',
+      zipCode: '75012',
+      city: 'Paris',
+      country: 'France',
+      type: PartnerType.CUSTOMER,
+      vatNumber: 'FR11223344556',
+      contact: {
+        firstName: 'Marc',
+        lastName: 'Lefèvre',
+        role: 'Gérant',
+        email: 'm.lefevre@lefevre.fr',
+      },
+    },
+    {
+      name: 'Atelier Novak',
+      email: 'hello@novak-atelier.fr',
+      phone: '04 78 55 21 90',
+      zipCode: '69003',
+      city: 'Lyon',
+      country: 'France',
+      type: PartnerType.CUSTOMER,
+      contact: {
+        firstName: 'Ivana',
+        lastName: 'Novak',
+        role: 'Directrice',
+        email: 'i.novak@novak-atelier.fr',
+      },
+    },
+    {
+      name: 'Groupe Vartex',
+      email: 'achats@vartex.com',
+      phone: '05 61 22 04 77',
+      zipCode: '31000',
+      city: 'Toulouse',
+      country: 'France',
+      type: PartnerType.BOTH,
+      vatNumber: 'FR99887766554',
+      contact: {
+        firstName: 'Hugo',
+        lastName: 'Lemoine',
+        role: 'Responsable achats',
+        email: 'h.lemoine@vartex.com',
+      },
+    },
+    {
+      name: 'Studio Kanto',
+      email: 'team@kanto.studio',
+      phone: '02 40 19 63 12',
+      zipCode: '44000',
+      city: 'Nantes',
+      country: 'France',
+      type: PartnerType.CUSTOMER,
+      contact: {
+        firstName: 'Lise',
+        lastName: 'Marchand',
+        role: 'Office manager',
+      },
+    },
+    {
+      name: 'Fournitures Bréval',
+      email: 'ventes@breval.fr',
+      phone: '03 20 45 78 01',
+      zipCode: '59000',
+      city: 'Lille',
+      country: 'France',
+      type: PartnerType.SUPPLIER,
+      contact: { firstName: 'Serge', lastName: 'Bréval', role: 'Commercial' },
+    },
+    {
+      name: 'Nordic Hardware AB',
+      email: 'sales@nordic-hw.se',
+      phone: '+46 8 555 010',
+      zipCode: '11122',
+      city: 'Stockholm',
+      country: 'Suède',
+      type: PartnerType.SUPPLIER,
+    },
   ];
 
   const partners: Record<string, { id: number; name: string }> = {};
@@ -316,10 +513,43 @@ async function main() {
 
   // --- 9. Devis -------------------------------------------------------------
   const quoteSeeds = [
-    { partner: 'Studio Kanto', status: QuoteStatus.VALIDATED, monthsAgo: 0, validityDays: 30, lines: [['ERP-START', 1], ['SRV-FORM', 1]] as [string, number][] },
-    { partner: 'Atelier Novak', status: QuoteStatus.SIGNED, monthsAgo: 1, validityDays: 30, lines: [['ERP-BIZ', 1], ['MOD-CRM', 2]] as [string, number][] },
-    { partner: 'Boulangerie Lefèvre', status: QuoteStatus.DRAFT, monthsAgo: 0, validityDays: 45, lines: [['MAT-IMPR', 2], ['CON-ETIQ', 6]] as [string, number][] },
-    { partner: 'Groupe Vartex', status: QuoteStatus.REFUSED, monthsAgo: 2, validityDays: 30, lines: [['ERP-BIZ', 3]] as [string, number][] },
+    {
+      partner: 'Studio Kanto',
+      status: QuoteStatus.VALIDATED,
+      monthsAgo: 0,
+      validityDays: 30,
+      lines: [
+        ['ERP-START', 1],
+        ['SRV-FORM', 1],
+      ] as [string, number][],
+    },
+    {
+      partner: 'Atelier Novak',
+      status: QuoteStatus.SIGNED,
+      monthsAgo: 1,
+      validityDays: 30,
+      lines: [
+        ['ERP-BIZ', 1],
+        ['MOD-CRM', 2],
+      ] as [string, number][],
+    },
+    {
+      partner: 'Boulangerie Lefèvre',
+      status: QuoteStatus.DRAFT,
+      monthsAgo: 0,
+      validityDays: 45,
+      lines: [
+        ['MAT-IMPR', 2],
+        ['CON-ETIQ', 6],
+      ] as [string, number][],
+    },
+    {
+      partner: 'Groupe Vartex',
+      status: QuoteStatus.REFUSED,
+      monthsAgo: 2,
+      validityDays: 30,
+      lines: [['ERP-BIZ', 3]] as [string, number][],
+    },
   ];
 
   for (const seed of quoteSeeds) {
@@ -347,13 +577,73 @@ async function main() {
 
   // --- 10. Commandes, factures et règlements --------------------------------
   const orderSeeds = [
-    { partner: 'Boulangerie Lefèvre', monthsAgo: 5, status: OrderStatus.BILLED, lines: [['ERP-START', 2], ['SRV-FORM', 1]] as [string, number][], invoice: 'PAID' },
-    { partner: 'Atelier Novak', monthsAgo: 4, status: OrderStatus.BILLED, lines: [['ERP-BIZ', 1], ['MOD-CRM', 2]] as [string, number][], invoice: 'PAID' },
-    { partner: 'Groupe Vartex', monthsAgo: 3, status: OrderStatus.BILLED, lines: [['ERP-BIZ', 3], ['SRV-FORM', 1], ['SRV-SUP', 6]] as [string, number][], invoice: 'PARTIAL' },
-    { partner: 'Studio Kanto', monthsAgo: 2, status: OrderStatus.BILLED, lines: [['MAT-TERM', 2], ['CON-ETIQ', 4]] as [string, number][], invoice: 'OVERDUE', ship: true },
-    { partner: 'Boulangerie Lefèvre', monthsAgo: 1, status: OrderStatus.SHIPPED, lines: [['MAT-IMPR', 1], ['CON-ETIQ', 8]] as [string, number][], ship: true },
-    { partner: 'Groupe Vartex', monthsAgo: 0, status: OrderStatus.VALIDATED, lines: [['ERP-BIZ', 2], ['SRV-FORM', 2]] as [string, number][] },
-    { partner: 'Atelier Novak', monthsAgo: 0, status: OrderStatus.DRAFT, lines: [['SRV-SUP', 3]] as [string, number][] },
+    {
+      partner: 'Boulangerie Lefèvre',
+      monthsAgo: 5,
+      status: OrderStatus.BILLED,
+      lines: [
+        ['ERP-START', 2],
+        ['SRV-FORM', 1],
+      ] as [string, number][],
+      invoice: 'PAID',
+    },
+    {
+      partner: 'Atelier Novak',
+      monthsAgo: 4,
+      status: OrderStatus.BILLED,
+      lines: [
+        ['ERP-BIZ', 1],
+        ['MOD-CRM', 2],
+      ] as [string, number][],
+      invoice: 'PAID',
+    },
+    {
+      partner: 'Groupe Vartex',
+      monthsAgo: 3,
+      status: OrderStatus.BILLED,
+      lines: [
+        ['ERP-BIZ', 3],
+        ['SRV-FORM', 1],
+        ['SRV-SUP', 6],
+      ] as [string, number][],
+      invoice: 'PARTIAL',
+    },
+    {
+      partner: 'Studio Kanto',
+      monthsAgo: 2,
+      status: OrderStatus.BILLED,
+      lines: [
+        ['MAT-TERM', 2],
+        ['CON-ETIQ', 4],
+      ] as [string, number][],
+      invoice: 'OVERDUE',
+      ship: true,
+    },
+    {
+      partner: 'Boulangerie Lefèvre',
+      monthsAgo: 1,
+      status: OrderStatus.SHIPPED,
+      lines: [
+        ['MAT-IMPR', 1],
+        ['CON-ETIQ', 8],
+      ] as [string, number][],
+      ship: true,
+    },
+    {
+      partner: 'Groupe Vartex',
+      monthsAgo: 0,
+      status: OrderStatus.VALIDATED,
+      lines: [
+        ['ERP-BIZ', 2],
+        ['SRV-FORM', 2],
+      ] as [string, number][],
+    },
+    {
+      partner: 'Atelier Novak',
+      monthsAgo: 0,
+      status: OrderStatus.DRAFT,
+      lines: [['SRV-SUP', 3]] as [string, number][],
+    },
   ];
 
   let invoiceCount = 0;
@@ -418,7 +708,11 @@ async function main() {
     if (!seed.invoice) continue;
 
     const invoiceDate = daysFrom(date, 5);
-    const invoiceRef = await nextRef(company.id, DocumentType.INVOICE, invoiceDate);
+    const invoiceRef = await nextRef(
+      company.id,
+      DocumentType.INVOICE,
+      invoiceDate,
+    );
     const dueDate = daysFrom(invoiceDate, 30);
 
     const paidAmount =
@@ -445,7 +739,8 @@ async function main() {
         status,
         date: invoiceDate,
         // La facture « OVERDUE » a une échéance volontairement dépassée.
-        dueDate: seed.invoice === 'OVERDUE' ? daysFrom(new Date(), -12) : dueDate,
+        dueDate:
+          seed.invoice === 'OVERDUE' ? daysFrom(new Date(), -12) : dueDate,
         createdAt: invoiceDate,
         updatedAt: invoiceDate,
         paidAmount,
@@ -470,18 +765,40 @@ async function main() {
       paymentCount++;
     }
   }
-  console.log(`✅ ${orderSeeds.length} commandes, ${invoiceCount} factures, ${paymentCount} règlements`);
+  console.log(
+    `✅ ${orderSeeds.length} commandes, ${invoiceCount} factures, ${paymentCount} règlements`,
+  );
 
   // --- 11. Commandes fournisseur -------------------------------------------
   const purchaseSeeds = [
-    { supplier: 'Fournitures Bréval', monthsAgo: 2, status: PurchaseOrderStatus.RECEIVED, lines: [['CON-ETIQ', 40], ['MAT-IMPR', 4]] as [string, number][] },
-    { supplier: 'Nordic Hardware AB', monthsAgo: 0, status: PurchaseOrderStatus.ORDERED, lines: [['MAT-TERM', 10]] as [string, number][] },
-    { supplier: 'Fournitures Bréval', monthsAgo: 0, status: PurchaseOrderStatus.DRAFT, lines: [['CON-ETIQ', 25]] as [string, number][] },
+    {
+      supplier: 'Fournitures Bréval',
+      monthsAgo: 2,
+      status: PurchaseOrderStatus.RECEIVED,
+      lines: [
+        ['CON-ETIQ', 40],
+        ['MAT-IMPR', 4],
+      ] as [string, number][],
+    },
+    {
+      supplier: 'Nordic Hardware AB',
+      monthsAgo: 0,
+      status: PurchaseOrderStatus.ORDERED,
+      lines: [['MAT-TERM', 10]] as [string, number][],
+    },
+    {
+      supplier: 'Fournitures Bréval',
+      monthsAgo: 0,
+      status: PurchaseOrderStatus.DRAFT,
+      lines: [['CON-ETIQ', 25]] as [string, number][],
+    },
   ];
 
   for (const seed of purchaseSeeds) {
     const date = monthsBefore(seed.monthsAgo);
-    const { lines, totals } = buildLines(products, seed.lines, { useCostPrice: true });
+    const { lines, totals } = buildLines(products, seed.lines, {
+      useCostPrice: true,
+    });
     const ref = await nextRef(company.id, DocumentType.PURCHASE_ORDER, date);
 
     await prisma.purchaseOrder.create({
@@ -494,7 +811,10 @@ async function main() {
         status: seed.status,
         date,
         expectedDate: daysFrom(date, 14),
-        receivedAt: seed.status === PurchaseOrderStatus.RECEIVED ? daysFrom(date, 10) : null,
+        receivedAt:
+          seed.status === PurchaseOrderStatus.RECEIVED
+            ? daysFrom(date, 10)
+            : null,
         createdAt: date,
         updatedAt: date,
         ...totals,
@@ -506,11 +826,53 @@ async function main() {
 
   // --- 12. Pistes -----------------------------------------------------------
   const leadSeeds = [
-    { name: 'Refonte parc logiciel', companyName: 'Menuiserie Ravel', contactName: 'Julien Ravel', email: 'j.ravel@ravel-bois.fr', phone: '02 99 31 44 08', source: 'Site web', status: LeadStatus.NEW, estimatedValue: 4200 },
-    { name: 'Migration depuis Excel', companyName: 'Cabinet Aurel', contactName: 'Sofia Aurel', email: 's.aurel@cabinet-aurel.fr', source: 'Recommandation', status: LeadStatus.CONTACTED, estimatedValue: 2800 },
-    { name: 'Déploiement 3 agences', companyName: 'Transports Merci', contactName: 'Paul Merci', email: 'p.merci@merci-transport.fr', phone: '04 91 20 87 33', source: 'Salon', status: LeadStatus.QUALIFIED, estimatedValue: 11500 },
-    { name: 'Besoin CRM simple', companyName: 'Fleuriste Iris', contactName: 'Nina Iris', email: 'bonjour@iris-fleurs.fr', source: 'Appel entrant', status: LeadStatus.CONTACTED, estimatedValue: 1200 },
-    { name: 'Audit process achats', companyName: 'Vartex Industrie', contactName: 'Hugo Lemoine', email: 'h.lemoine@vartex.com', source: 'Salon', status: LeadStatus.UNQUALIFIED, estimatedValue: 0 },
+    {
+      name: 'Refonte parc logiciel',
+      companyName: 'Menuiserie Ravel',
+      contactName: 'Julien Ravel',
+      email: 'j.ravel@ravel-bois.fr',
+      phone: '02 99 31 44 08',
+      source: 'Site web',
+      status: LeadStatus.NEW,
+      estimatedValue: 4200,
+    },
+    {
+      name: 'Migration depuis Excel',
+      companyName: 'Cabinet Aurel',
+      contactName: 'Sofia Aurel',
+      email: 's.aurel@cabinet-aurel.fr',
+      source: 'Recommandation',
+      status: LeadStatus.CONTACTED,
+      estimatedValue: 2800,
+    },
+    {
+      name: 'Déploiement 3 agences',
+      companyName: 'Transports Merci',
+      contactName: 'Paul Merci',
+      email: 'p.merci@merci-transport.fr',
+      phone: '04 91 20 87 33',
+      source: 'Salon',
+      status: LeadStatus.QUALIFIED,
+      estimatedValue: 11500,
+    },
+    {
+      name: 'Besoin CRM simple',
+      companyName: 'Fleuriste Iris',
+      contactName: 'Nina Iris',
+      email: 'bonjour@iris-fleurs.fr',
+      source: 'Appel entrant',
+      status: LeadStatus.CONTACTED,
+      estimatedValue: 1200,
+    },
+    {
+      name: 'Audit process achats',
+      companyName: 'Vartex Industrie',
+      contactName: 'Hugo Lemoine',
+      email: 'h.lemoine@vartex.com',
+      source: 'Salon',
+      status: LeadStatus.UNQUALIFIED,
+      estimatedValue: 0,
+    },
   ];
   const leads: { id: number }[] = [];
   for (const seed of leadSeeds) {
@@ -524,17 +886,62 @@ async function main() {
 
   // --- 13. Opportunités -----------------------------------------------------
   const opportunitySeeds = [
-    { name: 'Transports Merci — 3 agences', stage: OpportunityStage.NEGOTIATION, amount: 11500, probability: 70, partner: 'Groupe Vartex', lead: 2, inDays: 21 },
-    { name: 'Boulangerie Lefèvre — renouvellement', stage: OpportunityStage.PROPOSAL, amount: 1780, probability: 40, partner: 'Boulangerie Lefèvre', inDays: 14 },
-    { name: 'Studio Kanto — module CRM', stage: OpportunityStage.QUALIFICATION, amount: 840, probability: 10, partner: 'Studio Kanto', inDays: 45 },
-    { name: 'Atelier Novak — extension', stage: OpportunityStage.PROPOSAL, amount: 2340, probability: 40, partner: 'Atelier Novak', inDays: 30 },
-    { name: 'Groupe Vartex — support premium', stage: OpportunityStage.WON, amount: 2880, probability: 100, partner: 'Groupe Vartex', inDays: -10 },
-    { name: 'Cabinet Aurel — pack starter', stage: OpportunityStage.LOST, amount: 490, probability: 0, partner: 'Atelier Novak', inDays: -25, lostReason: 'Budget reporté à l’exercice suivant' },
+    {
+      name: 'Transports Merci — 3 agences',
+      stage: OpportunityStage.NEGOTIATION,
+      amount: 11500,
+      probability: 70,
+      partner: 'Groupe Vartex',
+      lead: 2,
+      inDays: 21,
+    },
+    {
+      name: 'Boulangerie Lefèvre — renouvellement',
+      stage: OpportunityStage.PROPOSAL,
+      amount: 1780,
+      probability: 40,
+      partner: 'Boulangerie Lefèvre',
+      inDays: 14,
+    },
+    {
+      name: 'Studio Kanto — module CRM',
+      stage: OpportunityStage.QUALIFICATION,
+      amount: 840,
+      probability: 10,
+      partner: 'Studio Kanto',
+      inDays: 45,
+    },
+    {
+      name: 'Atelier Novak — extension',
+      stage: OpportunityStage.PROPOSAL,
+      amount: 2340,
+      probability: 40,
+      partner: 'Atelier Novak',
+      inDays: 30,
+    },
+    {
+      name: 'Groupe Vartex — support premium',
+      stage: OpportunityStage.WON,
+      amount: 2880,
+      probability: 100,
+      partner: 'Groupe Vartex',
+      inDays: -10,
+    },
+    {
+      name: 'Cabinet Aurel — pack starter',
+      stage: OpportunityStage.LOST,
+      amount: 490,
+      probability: 0,
+      partner: 'Atelier Novak',
+      inDays: -25,
+      lostReason: 'Budget reporté à l’exercice suivant',
+    },
   ];
   const opportunities: { id: number }[] = [];
   for (const seed of opportunitySeeds) {
     const closed =
-      seed.stage === OpportunityStage.WON || seed.stage === OpportunityStage.LOST;
+      seed.stage === OpportunityStage.WON ||
+      seed.stage === OpportunityStage.LOST;
     opportunities.push(
       await prisma.opportunity.create({
         data: {
@@ -557,13 +964,55 @@ async function main() {
 
   // --- 14. Activités --------------------------------------------------------
   const activitySeeds = [
-    { subject: 'Rappeler Julien Ravel', type: ActivityType.CALL, status: ActivityStatus.PLANNED, inDays: 1, lead: 0 },
-    { subject: 'Envoyer la proposition commerciale', type: ActivityType.EMAIL, status: ActivityStatus.PLANNED, inDays: 2, opportunity: 1 },
-    { subject: 'Réunion de cadrage — 3 agences', type: ActivityType.MEETING, status: ActivityStatus.PLANNED, inDays: 5, opportunity: 0 },
-    { subject: 'Relance devis Studio Kanto', type: ActivityType.TASK, status: ActivityStatus.PLANNED, inDays: -3, opportunity: 2 },
-    { subject: 'Compte rendu du salon', type: ActivityType.NOTE, status: ActivityStatus.DONE, inDays: -12, lead: 2 },
-    { subject: 'Signature du contrat Vartex', type: ActivityType.TASK, status: ActivityStatus.DONE, inDays: -10, opportunity: 4 },
-    { subject: 'Point trimestriel client', type: ActivityType.MEETING, status: ActivityStatus.PLANNED, inDays: 9, partner: 'Boulangerie Lefèvre' },
+    {
+      subject: 'Rappeler Julien Ravel',
+      type: ActivityType.CALL,
+      status: ActivityStatus.PLANNED,
+      inDays: 1,
+      lead: 0,
+    },
+    {
+      subject: 'Envoyer la proposition commerciale',
+      type: ActivityType.EMAIL,
+      status: ActivityStatus.PLANNED,
+      inDays: 2,
+      opportunity: 1,
+    },
+    {
+      subject: 'Réunion de cadrage — 3 agences',
+      type: ActivityType.MEETING,
+      status: ActivityStatus.PLANNED,
+      inDays: 5,
+      opportunity: 0,
+    },
+    {
+      subject: 'Relance devis Studio Kanto',
+      type: ActivityType.TASK,
+      status: ActivityStatus.PLANNED,
+      inDays: -3,
+      opportunity: 2,
+    },
+    {
+      subject: 'Compte rendu du salon',
+      type: ActivityType.NOTE,
+      status: ActivityStatus.DONE,
+      inDays: -12,
+      lead: 2,
+    },
+    {
+      subject: 'Signature du contrat Vartex',
+      type: ActivityType.TASK,
+      status: ActivityStatus.DONE,
+      inDays: -10,
+      opportunity: 4,
+    },
+    {
+      subject: 'Point trimestriel client',
+      type: ActivityType.MEETING,
+      status: ActivityStatus.PLANNED,
+      inDays: 9,
+      partner: 'Boulangerie Lefèvre',
+    },
   ];
   for (const seed of activitySeeds) {
     await prisma.activity.create({
@@ -574,11 +1023,15 @@ async function main() {
         status: seed.status,
         dueDate: daysFrom(new Date(), seed.inDays),
         completedAt:
-          seed.status === ActivityStatus.DONE ? daysFrom(new Date(), seed.inDays) : null,
+          seed.status === ActivityStatus.DONE
+            ? daysFrom(new Date(), seed.inDays)
+            : null,
         ownerId: userIds.commercial,
         leadId: seed.lead !== undefined ? leads[seed.lead].id : null,
         opportunityId:
-          seed.opportunity !== undefined ? opportunities[seed.opportunity].id : null,
+          seed.opportunity !== undefined
+            ? opportunities[seed.opportunity].id
+            : null,
         partnerId: seed.partner ? partners[seed.partner].id : null,
       },
     });
@@ -591,7 +1044,16 @@ async function main() {
 
 /** Valorise des lignes « [référence, quantité] » avec les helpers du domaine. */
 function buildLines(
-  products: Record<string, { id: number; price: number; costPrice: number; vatRate: number; name: string }>,
+  products: Record<
+    string,
+    {
+      id: number;
+      price: number;
+      costPrice: number;
+      vatRate: number;
+      name: string;
+    }
+  >,
   entries: [string, number][],
   { useCostPrice = false }: { useCostPrice?: boolean } = {},
 ) {
@@ -622,13 +1084,35 @@ function buildLines(
       totalHT: totals.totalHT,
       totalVat: totals.totalVat,
       totalTTC: totals.totalTTC,
+      // Jeu de démonstration en devise société : le taux vaut 1 et les
+      // montants convertis sont égaux aux totaux. Sans eux, la balance âgée
+      // et l'export FEC ressortiraient à zéro.
+      currency: 'EUR',
+      exchangeRate: 1,
+      baseTotalHT: totals.totalHT,
+      baseTotalTTC: totals.totalTTC,
     },
   };
 }
 
+/**
+ * Préfixes des références, alignés sur `NumberingService`.
+ *
+ * Le type `Record<DocumentType, string>` est ce qui compte : il oblige à
+ * compléter la table à chaque nouveau type de document. Sans lui, `AV` avait
+ * été oublié et un avoir se serait numéroté « undefined2026-0001 ».
+ */
+const SEED_PREFIX: Record<DocumentType, string> = {
+  QUOTE: 'DE',
+  ORDER: 'CO',
+  INVOICE: 'FA',
+  CREDIT_NOTE: 'AV',
+  PURCHASE_ORDER: 'CF',
+};
+
 /** Même logique de numérotation que NumberingService, réutilisée hors Nest. */
 async function nextRef(companyId: number, type: DocumentType, at: Date) {
-  const prefix = { QUOTE: 'DE', ORDER: 'CO', INVOICE: 'FA', PURCHASE_ORDER: 'CF' }[type];
+  const prefix = SEED_PREFIX[type];
   const year = at.getFullYear();
 
   const counter = await prisma.documentCounter.upsert({
@@ -640,10 +1124,14 @@ async function nextRef(companyId: number, type: DocumentType, at: Date) {
   return `${prefix}${year}-${String(counter.value).padStart(4, '0')}`;
 }
 
-function printCredentials(users: { email: string; password: string; role: string }[]) {
+function printCredentials(
+  users: { email: string; password: string; role: string }[],
+) {
   console.log('Comptes de démonstration :');
   for (const user of users) {
-    console.log(`  • ${user.email.padEnd(22)} / ${user.password.padEnd(10)} (${user.role})`);
+    console.log(
+      `  • ${user.email.padEnd(22)} / ${user.password.padEnd(10)} (${user.role})`,
+    );
   }
   console.log('');
 }

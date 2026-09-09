@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { InvoiceStatus } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Response } from 'express';
 import * as fs from 'fs';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
@@ -27,7 +27,11 @@ import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { ChangeInvoiceStatusDto } from './dto/change-invoice-status.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { CreateCreditNoteDto } from './dto/create-credit-note.dto';
+import { ListInvoicesDto } from './dto/list-invoices.dto';
 
+@ApiTags('sales')
+@ApiBearerAuth()
 @Controller('invoices')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class InvoicesController {
@@ -48,17 +52,8 @@ export class InvoicesController {
 
   @Get()
   @RequirePermission('sales', 'invoices', 'read')
-  findAll(
-    @CompanyId() companyId: number,
-    @Query('status') status?: InvoiceStatus,
-    @Query('partnerId') partnerId?: string,
-    @Query('overdue') overdue?: string,
-  ) {
-    return this.invoicesService.findAll(companyId, {
-      status,
-      partnerId: partnerId ? Number(partnerId) : undefined,
-      overdue: overdue === 'true',
-    });
+  findAll(@CompanyId() companyId: number, @Query() query: ListInvoicesDto) {
+    return this.invoicesService.findAll(companyId, query);
   }
 
   // Déclaré avant `:id` pour lever toute ambiguïté de routage.
@@ -69,7 +64,10 @@ export class InvoicesController {
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
   ) {
-    const { filePath, fileName } = await this.invoicesService.getPdfPath(companyId, id);
+    const { filePath, fileName } = await this.invoicesService.getPdfPath(
+      companyId,
+      id,
+    );
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -103,6 +101,31 @@ export class InvoicesController {
     @Body() dto: ChangeInvoiceStatusDto,
   ) {
     return this.invoicesService.changeStatus(companyId, id, dto.status);
+  }
+
+  /** Émet un avoir corrigeant cette facture. */
+  @Post(':id/credit-note')
+  @RequirePermission('sales', 'invoices', 'create')
+  createCreditNote(
+    @CompanyId() companyId: number,
+    @CurrentUser('userId') userId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateCreditNoteDto,
+  ) {
+    return this.invoicesService.createCreditNote(companyId, userId, id, dto);
+  }
+
+  /** Envoie la facture au client, PDF joint. `reminder=true` pour une relance. */
+  @Post(':id/send')
+  @RequirePermission('sales', 'invoices', 'update')
+  send(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Query('reminder') reminder?: string,
+  ) {
+    return this.invoicesService.send(companyId, id, {
+      reminder: reminder === 'true',
+    });
   }
 
   @Delete(':id')

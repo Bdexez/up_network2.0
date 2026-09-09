@@ -12,9 +12,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const secretOrKey = process.env.JWT_SECRET;
 
     if (!secretOrKey) {
-      throw new Error(
-        'JWT_SECRET must be defined (voir backend/.env.example)',
-      );
+      throw new Error('JWT_SECRET must be defined (voir backend/.env.example)');
     }
 
     const options: StrategyOptions = {

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ActivityStatus,
   InvoiceStatus,
+  InvoiceType,
   LeadStatus,
   OpportunityStage,
   OrderStatus,
@@ -15,6 +16,15 @@ const OPEN_INVOICE_STATUSES = [
   InvoiceStatus.UNPAID,
   InvoiceStatus.PARTIALLY_PAID,
 ];
+
+/**
+ * Un avoir vient en déduction : il ne doit ni gonfler le chiffre d'affaires ni
+ * l'encours. On agrège donc séparément et on soustrait.
+ *
+ * Toutes les sommes portent sur les montants convertis (`baseTotal…`) : un
+ * document en dollars et un document en euros ne s'additionnent pas autrement.
+ */
+const ISSUED = { status: { not: InvoiceStatus.DRAFT } } as const;
 
 @Injectable()
 export class DashboardService {
@@ -47,26 +57,16 @@ export class DashboardService {
       }),
       // Le chiffre d'affaires s'appuie sur les factures émises, pas sur les
       // commandes : c'est ce qui est réellement facturé qui compte.
-      this.prisma.invoice.aggregate({
-        where: { companyId, status: { not: InvoiceStatus.DRAFT } },
-        _sum: { totalHT: true },
+      this.netRevenue({ companyId, ...ISSUED }),
+      this.netRevenue({ companyId, ...ISSUED, date: { gte: monthStart } }),
+      this.prisma.invoice.count({
+        where: { companyId, type: InvoiceType.INVOICE },
       }),
-      this.prisma.invoice.aggregate({
-        where: {
-          companyId,
-          status: { not: InvoiceStatus.DRAFT },
-          date: { gte: monthStart },
-        },
-        _sum: { totalHT: true },
-      }),
-      this.prisma.invoice.count({ where: { companyId } }),
-      this.prisma.invoice.aggregate({
-        where: { companyId, status: { in: OPEN_INVOICE_STATUSES } },
-        _sum: { totalTTC: true, paidAmount: true },
-      }),
+      this.netOutstanding(companyId),
       this.prisma.invoice.count({
         where: {
           companyId,
+          type: InvoiceType.INVOICE,
           status: { in: OPEN_INVOICE_STATUSES },
           dueDate: { lt: now },
         },
@@ -77,7 +77,7 @@ export class DashboardService {
           status: { in: [QuoteStatus.VALIDATED, QuoteStatus.SIGNED] },
         },
         _count: { _all: true },
-        _sum: { totalHT: true },
+        _sum: { baseTotalHT: true },
       }),
       this.prisma.lead.count({
         where: {
@@ -99,7 +99,11 @@ export class DashboardService {
         _sum: { amount: true },
       }),
       this.prisma.activity.count({
-        where: { companyId, status: ActivityStatus.PLANNED, dueDate: { lt: now } },
+        where: {
+          companyId,
+          status: ActivityStatus.PLANNED,
+          dueDate: { lt: now },
+        },
       }),
       this.countLowStock(companyId),
     ]);
@@ -109,14 +113,12 @@ export class DashboardService {
       products,
       orders,
       invoices,
-      revenue: round2(revenue._sum.totalHT ?? 0),
-      monthRevenue: round2(monthRevenue._sum.totalHT ?? 0),
-      outstandingAmount: round2(
-        (outstanding._sum.totalTTC ?? 0) - (outstanding._sum.paidAmount ?? 0),
-      ),
+      revenue,
+      monthRevenue,
+      outstandingAmount: outstanding,
       overdueInvoices,
       openQuotes: openQuotes._count._all,
-      openQuotesAmount: round2(openQuotes._sum.totalHT ?? 0),
+      openQuotesAmount: round2(openQuotes._sum.baseTotalHT ?? 0),
       openLeads,
       openOpportunities: openOpportunities._count._all,
       openPipelineAmount: round2(openOpportunities._sum.amount ?? 0),
@@ -133,12 +135,8 @@ export class DashboardService {
     const from = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
 
     const invoices = await this.prisma.invoice.findMany({
-      where: {
-        companyId,
-        status: { not: InvoiceStatus.DRAFT },
-        date: { gte: from },
-      },
-      select: { date: true, totalHT: true },
+      where: { companyId, ...ISSUED, date: { gte: from } },
+      select: { date: true, baseTotalHT: true, type: true },
     });
 
     const buckets = new Map<string, number>();
@@ -149,9 +147,12 @@ export class DashboardService {
 
     for (const invoice of invoices) {
       const key = monthKey(invoice.date);
-      if (buckets.has(key)) {
-        buckets.set(key, (buckets.get(key) ?? 0) + invoice.totalHT);
-      }
+      if (!buckets.has(key)) continue;
+      const signed =
+        invoice.type === InvoiceType.CREDIT_NOTE
+          ? -invoice.baseTotalHT
+          : invoice.baseTotalHT;
+      buckets.set(key, (buckets.get(key) ?? 0) + signed);
     }
 
     return [...buckets.entries()].map(([month, total]) => ({
@@ -160,30 +161,45 @@ export class DashboardService {
     }));
   }
 
-  /** Meilleurs clients par chiffre d'affaires facturé. */
+  /** Meilleurs clients par chiffre d'affaires facturé, avoirs déduits. */
   async topPartners(companyId: number, limit = 5) {
     const grouped = await this.prisma.invoice.groupBy({
-      by: ['partnerId'],
-      where: { companyId, status: { not: InvoiceStatus.DRAFT } },
-      _sum: { totalHT: true },
+      by: ['partnerId', 'type'],
+      where: { companyId, ...ISSUED },
+      _sum: { baseTotalHT: true },
       _count: { _all: true },
-      orderBy: { _sum: { totalHT: 'desc' } },
-      take: limit,
     });
 
-    if (grouped.length === 0) return [];
+    // Le tri se fait après déduction : un client très avoiré ne doit pas
+    // rester en tête sur la seule foi de ses factures.
+    const byPartner = new Map<number, { total: number; invoices: number }>();
+    for (const row of grouped) {
+      const current = byPartner.get(row.partnerId) ?? { total: 0, invoices: 0 };
+      const amount = row._sum.baseTotalHT ?? 0;
+      current.total += row.type === InvoiceType.CREDIT_NOTE ? -amount : amount;
+      if (row.type === InvoiceType.INVOICE) current.invoices += row._count._all;
+      byPartner.set(row.partnerId, current);
+    }
+
+    const top = [...byPartner.entries()]
+      .sort((a, b) => b[1].total - a[1].total)
+      .slice(0, limit);
+
+    if (top.length === 0) return [];
 
     const partners = await this.prisma.partner.findMany({
-      where: { id: { in: grouped.map((row) => row.partnerId) } },
+      where: { id: { in: top.map(([partnerId]) => partnerId) } },
       select: { id: true, name: true },
     });
-    const nameById = new Map(partners.map((partner) => [partner.id, partner.name]));
+    const nameById = new Map(
+      partners.map((partner) => [partner.id, partner.name]),
+    );
 
-    return grouped.map((row) => ({
-      partnerId: row.partnerId,
-      name: nameById.get(row.partnerId) ?? 'Client supprimé',
-      invoices: row._count._all,
-      total: round2(row._sum.totalHT ?? 0),
+    return top.map(([partnerId, stats]) => ({
+      partnerId,
+      name: nameById.get(partnerId) ?? 'Client supprimé',
+      invoices: stats.invoices,
+      total: round2(stats.total),
     }));
   }
 
@@ -272,6 +288,42 @@ export class DashboardService {
     return events
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .slice(0, limit);
+  }
+
+  /** Chiffre d'affaires HT, avoirs déduits. */
+  private async netRevenue(where: {
+    companyId: number;
+    status?: unknown;
+    date?: unknown;
+  }): Promise<number> {
+    const grouped = await this.prisma.invoice.groupBy({
+      by: ['type'],
+      where: where as never,
+      _sum: { baseTotalHT: true },
+    });
+
+    return round2(
+      grouped.reduce((acc, row) => {
+        const amount = row._sum.baseTotalHT ?? 0;
+        return acc + (row.type === InvoiceType.CREDIT_NOTE ? -amount : amount);
+      }, 0),
+    );
+  }
+
+  /** Encours client TTC : reste dû sur les factures, moins les avoirs ouverts. */
+  private async netOutstanding(companyId: number): Promise<number> {
+    const grouped = await this.prisma.invoice.groupBy({
+      by: ['type'],
+      where: { companyId, status: { in: OPEN_INVOICE_STATUSES } },
+      _sum: { baseTotalTTC: true, paidAmount: true },
+    });
+
+    return round2(
+      grouped.reduce((acc, row) => {
+        const due = (row._sum.baseTotalTTC ?? 0) - (row._sum.paidAmount ?? 0);
+        return acc + (row.type === InvoiceType.CREDIT_NOTE ? -due : due);
+      }, 0),
+    );
   }
 
   /** Nombre de références sous leur seuil d'alerte. */

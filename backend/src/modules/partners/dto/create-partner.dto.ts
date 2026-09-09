@@ -1,5 +1,8 @@
 import {
   IsBoolean,
+  IsInt,
+  Max,
+  Min,
   IsEmail,
   IsEnum,
   IsOptional,
@@ -54,4 +57,11 @@ export class CreatePartnerDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /// Délai de règlement négocié, en jours. À défaut, celui de la société.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  paymentTermsDays?: number;
 }

@@ -8,10 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { PurchaseOrderStatus } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -25,7 +27,10 @@ import {
   ReceivePurchaseOrderDto,
   UpdatePurchaseOrderDto,
 } from './dto/purchase-order.dto';
+import { ListPurchaseOrdersDto } from './dto/list-purchases.dto';
 
+@ApiTags('purchases')
+@ApiBearerAuth()
 @Controller('purchases')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class PurchasesController {
@@ -43,8 +48,28 @@ export class PurchasesController {
 
   @Get()
   @RequirePermission('purchases', 'orders', 'read')
-  findAll(@CompanyId() companyId: number, @Query('status') status?: PurchaseOrderStatus) {
-    return this.purchasesService.findAll(companyId, { status });
+  findAll(
+    @CompanyId() companyId: number,
+    @Query() query: ListPurchaseOrdersDto,
+  ) {
+    return this.purchasesService.findAll(companyId, query);
+  }
+
+  @Get(':id/pdf')
+  @RequirePermission('purchases', 'orders', 'read')
+  async downloadPdf(
+    @CompanyId() companyId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.purchasesService.renderPdf(
+      companyId,
+      id,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
   }
 
   @Get(':id')
@@ -84,7 +109,12 @@ export class PurchasesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ReceivePurchaseOrderDto,
   ) {
-    return this.purchasesService.receive(companyId, userId, id, dto.warehouseId);
+    return this.purchasesService.receive(
+      companyId,
+      userId,
+      id,
+      dto.warehouseId,
+    );
   }
 
   @Delete(':id')

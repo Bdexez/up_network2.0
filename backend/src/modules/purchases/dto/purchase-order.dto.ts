@@ -1,6 +1,9 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  IsNumber,
+  Length,
+  Min,
   IsArray,
   IsDateString,
   IsEnum,
@@ -37,6 +40,17 @@ export class CreatePurchaseOrderDto {
   @ValidateNested({ each: true })
   @Type(() => DocumentLineDto)
   lines: DocumentLineDto[];
+  /** Devise du document ; à défaut, celle de la société. */
+  @IsOptional()
+  @IsString()
+  @Length(3, 3)
+  currency?: string;
+
+  /** Taux vers la devise société. Requis pour une devise étrangère. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  exchangeRate?: number;
 }
 
 export class UpdatePurchaseOrderDto {
@@ -67,6 +81,14 @@ export class UpdatePurchaseOrderDto {
   @ValidateNested({ each: true })
   @Type(() => DocumentLineDto)
   lines?: DocumentLineDto[];
+  /**
+   * Version lue par le client. Fournie, elle protège d'un écrasement
+   * concurrent ; omise, la modification est appliquée sans contrôle.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  version?: number;
 }
 
 export class ChangePurchaseStatusDto {

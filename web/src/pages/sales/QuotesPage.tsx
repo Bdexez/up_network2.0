@@ -1,13 +1,21 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRightLeft, FileSignature, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Download,
+  FileSignature,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../lib/api';
-import { useList, useWrite } from '../../lib/hooks';
+import { useList, usePage, usePagination, useWrite } from '../../lib/hooks';
+import { useFileDownload } from '../../lib/download';
 import { formatDate, money } from '../../lib/format';
 import { QUOTE_FLOW } from '../../lib/documents';
 import { P } from '../../lib/permissions';
-import type { Partner, Product, Quote, QuoteStatus } from '../../lib/types';
+import type { PartnerOption, ProductOption, Quote, QuoteStatus } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -19,15 +27,18 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 import { DocumentFormModal } from '../../components/documents/DocumentFormModal';
 import { DocumentLines } from '../../components/documents/DocumentLines';
 import { DocumentTotals } from '../../components/documents/DocumentTotals';
 import { StatusActions } from '../../components/documents/StatusActions';
 import { StatusBadge } from '../../components/documents/StatusBadge';
 import { toDraftLines } from '../../components/documents/LineEditor';
+import { Attachments } from '../../components/documents/Attachments';
 
 export function QuotesPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const companyCurrency = user?.company?.currency ?? 'EUR';
   const navigate = useNavigate();
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
@@ -35,13 +46,16 @@ export function QuotesPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<Quote | null>(null);
 
-  const quotes = useList<Quote>(
-    ['quotes'],
-    '/quotes',
-    status ? { status } : undefined,
-  );
-  const partners = useList<Partner>(['partners'], '/partners');
-  const products = useList<Product>(['products'], '/products');
+  const pdf = useFileDownload();
+  const pagination = usePagination();
+  const quotes = usePage<Quote>(['quotes'], '/quotes', {
+    ...pagination.params,
+    ...(status ? { status } : {}),
+  });
+  const partners = useList<PartnerOption>(['partner-options', 'customer'], '/partners/options', {
+    type: 'CUSTOMER',
+  });
+  const products = useList<ProductOption>(['product-options'], '/products/options');
 
   const detail = useQuery({
     queryKey: ['quotes', 'detail', openId ?? editingId],
@@ -91,6 +105,9 @@ export function QuotesPage() {
             date: editing.date.slice(0, 10),
             secondaryDate: editing.validUntil?.slice(0, 10) ?? '',
             notes: editing.notes ?? '',
+            version: editing.version,
+            currency: editing.currency,
+            exchangeRate: String(editing.exchangeRate),
             lines: toDraftLines(editing.lines),
           }
         : undefined,
@@ -106,7 +123,10 @@ export function QuotesPage() {
           <>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                pagination.reset();
+              }}
               aria-label="Filtrer par statut"
               className="h-9 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm text-ink hover:border-line-strong focus:border-accent"
             >
@@ -131,7 +151,7 @@ export function QuotesPage() {
           <Spinner />
         ) : quotes.isError ? (
           <ErrorState message={errorMessage(quotes.error)} onRetry={() => void quotes.refetch()} />
-        ) : (quotes.data?.length ?? 0) === 0 ? (
+        ) : quotes.items.length === 0 ? (
           <EmptyState
             icon={<FileSignature size={26} />}
             title={status ? 'Aucun résultat' : 'Aucun devis'}
@@ -163,7 +183,7 @@ export function QuotesPage() {
               </tr>
             </thead>
             <tbody>
-              {quotes.data?.map((quote) => (
+              {quotes.items.map((quote) => (
                 <Tr key={quote.id} onClick={() => setOpenId(quote.id)}>
                   <Td className="font-medium text-ink">{quote.ref}</Td>
                   <Td>{quote.partner.name}</Td>
@@ -171,10 +191,10 @@ export function QuotesPage() {
                     <StatusBadge status={quote.status} flow={QUOTE_FLOW} />
                   </Td>
                   <Td align="right" numeric>
-                    {money(quote.totalHT, true)}
+                    {money(quote.totalHT, true, quote.currency)}
                   </Td>
                   <Td align="right" numeric className="font-medium text-ink">
-                    {money(quote.totalTTC, true)}
+                    {money(quote.totalTTC, true, quote.currency)}
                   </Td>
                   <Td align="right" numeric>
                     {formatDate(quote.date)}
@@ -187,6 +207,21 @@ export function QuotesPage() {
                       className="flex justify-end gap-1"
                       onClick={(event) => event.stopPropagation()}
                     >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Download size={14} />}
+                        loading={pdf.pendingId === quote.id}
+                        onClick={() =>
+                          void pdf.download(
+                            `/quotes/${quote.id}/pdf`,
+                            `${quote.ref}.pdf`,
+                            quote.id,
+                          )
+                        }
+                      >
+                        PDF
+                      </Button>
                       {quote.status === 'SIGNED' && can(P.ordersCreate) && (
                         <Button
                           size="sm"
@@ -227,6 +262,15 @@ export function QuotesPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={quotes.page}
+          totalPages={quotes.totalPages}
+          total={quotes.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="devis"
+        />
       </Card>
 
       <DocumentFormModal
@@ -234,8 +278,9 @@ export function QuotesPage() {
         title={editing ? `Modifier le devis ${editing.ref}` : 'Nouveau devis'}
         partnerLabel="Client"
         secondaryDateLabel="Valable jusqu'au"
-        partners={(partners.data ?? []).filter((p) => p.isActive && p.type !== 'SUPPLIER')}
+        partners={partners.data ?? []}
         products={products.data ?? []}
+        companyCurrency={companyCurrency}
         loading={save.isPending}
         initial={initialValues}
         onClose={closeForm}
@@ -249,6 +294,9 @@ export function QuotesPage() {
                 validUntil: payload.secondaryDate,
                 notes: payload.notes,
                 lines: payload.lines,
+                version: payload.version,
+                currency: payload.currency,
+                exchangeRate: payload.exchangeRate,
               },
             },
             { onSuccess: closeForm },
@@ -300,8 +348,11 @@ export function QuotesPage() {
                 totalVat={detail.data.totalVat}
                 totalTTC={detail.data.totalTTC}
                 vatBreakdown={detail.data.vatBreakdown}
+                currency={detail.data.currency}
               />
             </div>
+
+            <Attachments entity="QUOTE" entityId={detail.data.id} />
 
             {detail.data.orders.length > 0 && (
               <p className="text-[13px] text-ink-3">

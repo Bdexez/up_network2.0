@@ -6,6 +6,11 @@ import {
 import { Prisma, StockMovementType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { round2 } from 'src/common/documents/totals';
+import {
+  paginate,
+  resolvePage,
+  type PageParams,
+} from 'src/common/pagination/paginate';
 import { AdjustStockDto, TransferStockDto } from './dto/adjust-stock.dto';
 
 interface MovementInput {
@@ -18,6 +23,12 @@ interface MovementInput {
   type: StockMovementType;
   reason?: string;
   documentRef?: string;
+  /**
+   * Autorise le stock à passer sous zéro. Non renseigné = refusé : le contrôle
+   * est strict par défaut, on ne peut l'assouplir qu'explicitement, après avoir
+   * lu le réglage de la société (voir `isNegativeStockAllowed`).
+   */
+  allowNegative?: boolean;
 }
 
 @Injectable()
@@ -32,6 +43,15 @@ export class StockService {
   async recordMovement(tx: Prisma.TransactionClient, input: MovementInput) {
     const quantity = round2(input.quantity);
     if (quantity === 0) return null;
+
+    if (quantity < 0 && !input.allowNegative) {
+      await this.assertAvailable(
+        tx,
+        input.productId,
+        input.warehouseId,
+        -quantity,
+      );
+    }
 
     const stock = await tx.stock.upsert({
       where: {
@@ -63,6 +83,15 @@ export class StockService {
     });
   }
 
+  /** Le réglage société qui autorise (ou non) un stock négatif. */
+  async isNegativeStockAllowed(companyId: number): Promise<boolean> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { allowNegativeStock: true },
+    });
+    return company?.allowNegativeStock ?? false;
+  }
+
   /**
    * Sortie ou entrée de stock pour toutes les lignes d'un document.
    * Les lignes sans produit et les produits non suivis (services) sont ignorés.
@@ -88,12 +117,21 @@ export class StockService {
     if (productIds.length === 0) return;
 
     const tracked = await tx.product.findMany({
-      where: { id: { in: productIds }, companyId: params.companyId, manageStock: true },
+      where: {
+        id: { in: productIds },
+        companyId: params.companyId,
+        manageStock: true,
+      },
       select: { id: true },
     });
     const trackedIds = new Set(tracked.map((product) => product.id));
 
     const sign = params.direction === 'IN' ? 1 : -1;
+    // Résolu une seule fois pour tout le document, pas une fois par ligne.
+    const allowNegative =
+      params.direction === 'OUT'
+        ? await this.isNegativeStockAllowed(params.companyId)
+        : true;
 
     for (const line of params.lines) {
       if (line.productId === null || !trackedIds.has(line.productId)) continue;
@@ -104,8 +142,12 @@ export class StockService {
         productId: line.productId,
         warehouseId: params.warehouseId,
         quantity: sign * line.quantity,
-        type: params.direction === 'IN' ? StockMovementType.IN : StockMovementType.OUT,
+        type:
+          params.direction === 'IN'
+            ? StockMovementType.IN
+            : StockMovementType.OUT,
         documentRef: params.documentRef,
+        allowNegative,
       });
     }
   }
@@ -143,7 +185,11 @@ export class StockService {
   /** Niveaux par produit, tous entrepôts confondus, avec l'alerte de seuil. */
   async levels(
     companyId: number,
-    filters: { warehouseId?: number; search?: string; belowAlert?: boolean },
+    filters: {
+      warehouseId?: number;
+      search?: string;
+      belowAlert?: boolean;
+    } & PageParams,
   ) {
     const where: Prisma.ProductWhereInput = { companyId, manageStock: true };
     if (filters.search?.trim()) {
@@ -158,8 +204,12 @@ export class StockService {
       where,
       include: {
         stocks: {
-          where: filters.warehouseId ? { warehouseId: filters.warehouseId } : undefined,
-          include: { warehouse: { select: { id: true, name: true, code: true } } },
+          where: filters.warehouseId
+            ? { warehouseId: filters.warehouseId }
+            : undefined,
+          include: {
+            warehouse: { select: { id: true, name: true, code: true } },
+          },
         },
       },
       orderBy: { name: 'asc' },
@@ -186,33 +236,57 @@ export class StockService {
       };
     });
 
-    return filters.belowAlert ? rows.filter((row) => row.belowAlert) : rows;
+    // Le seuil d'alerte se calcule à partir des quantités agrégées : il ne peut
+    // pas s'exprimer en SQL ici, la page est donc découpée après filtrage.
+    const filtered = filters.belowAlert
+      ? rows.filter((row) => row.belowAlert)
+      : rows;
+
+    const { page, perPage, skip, take } = resolvePage(filters);
+
+    return {
+      items: filtered.slice(skip, skip + take),
+      page,
+      perPage,
+      total: filtered.length,
+      totalPages: Math.max(Math.ceil(filtered.length / perPage), 1),
+    };
   }
 
   movements(
     companyId: number,
-    filters: { productId?: number; warehouseId?: number; limit?: number },
+    filters: { productId?: number; warehouseId?: number } & PageParams,
   ) {
-    return this.prisma.stockMovement.findMany({
-      where: {
-        companyId,
-        productId: filters.productId,
-        warehouseId: filters.warehouseId,
-      },
-      include: {
-        product: { select: { id: true, name: true, sku: true } },
-        warehouse: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, username: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(filters.limit ?? 100, 300),
-    });
+    const where: Prisma.StockMovementWhereInput = {
+      companyId,
+      productId: filters.productId,
+      warehouseId: filters.warehouseId,
+    };
+
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.stockMovement.findMany({
+          where,
+          include: {
+            product: { select: { id: true, name: true, sku: true } },
+            warehouse: { select: { id: true, name: true } },
+            createdBy: { select: { id: true, username: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.stockMovement.count({ where }),
+      ]),
+    );
   }
 
   /** Correction manuelle d'un niveau (inventaire, casse, erreur de saisie). */
   async adjust(companyId: number, userId: number, dto: AdjustStockDto) {
     await this.assertProduct(companyId, dto.productId);
     await this.resolveWarehouse(companyId, dto.warehouseId);
+
+    const allowNegative = await this.isNegativeStockAllowed(companyId);
 
     return this.prisma.$transaction((tx) =>
       this.recordMovement(tx, {
@@ -223,6 +297,7 @@ export class StockService {
         quantity: dto.quantity,
         type: StockMovementType.ADJUSTMENT,
         reason: dto.reason ?? 'Ajustement manuel',
+        allowNegative,
       }),
     );
   }
@@ -230,10 +305,14 @@ export class StockService {
   /** Transfert entre deux entrepôts : une sortie et une entrée liées. */
   async transfer(companyId: number, userId: number, dto: TransferStockDto) {
     if (dto.fromWarehouseId === dto.toWarehouseId) {
-      throw new BadRequestException("L'entrepôt source et la destination sont identiques");
+      throw new BadRequestException(
+        "L'entrepôt source et la destination sont identiques",
+      );
     }
     if (dto.quantity <= 0) {
-      throw new BadRequestException('La quantité transférée doit être positive');
+      throw new BadRequestException(
+        'La quantité transférée doit être positive',
+      );
     }
 
     await this.assertProduct(companyId, dto.productId);
@@ -241,6 +320,7 @@ export class StockService {
     await this.resolveWarehouse(companyId, dto.toWarehouseId);
 
     const reason = dto.reason ?? 'Transfert entre entrepôts';
+    const allowNegative = await this.isNegativeStockAllowed(companyId);
 
     return this.prisma.$transaction(async (tx) => {
       await this.recordMovement(tx, {
@@ -251,6 +331,7 @@ export class StockService {
         quantity: -dto.quantity,
         type: StockMovementType.TRANSFER,
         reason,
+        allowNegative,
       });
       await this.recordMovement(tx, {
         companyId,
@@ -263,6 +344,42 @@ export class StockService {
       });
       return { message: 'Transfert enregistré' };
     });
+  }
+
+  /**
+   * Refuse une sortie supérieure au disponible. Le message nomme le produit,
+   * l'entrepôt et les quantités : c'est presque toujours une erreur de saisie.
+   */
+  private async assertAvailable(
+    tx: Prisma.TransactionClient,
+    productId: number,
+    warehouseId: number,
+    requested: number,
+  ) {
+    const stock = await tx.stock.findUnique({
+      where: { productId_warehouseId: { productId, warehouseId } },
+      select: { quantity: true },
+    });
+    const available = stock?.quantity ?? 0;
+
+    if (available < requested) {
+      const [product, warehouse] = await Promise.all([
+        tx.product.findUnique({
+          where: { id: productId },
+          select: { name: true },
+        }),
+        tx.warehouse.findUnique({
+          where: { id: warehouseId },
+          select: { name: true },
+        }),
+      ]);
+
+      throw new BadRequestException(
+        `Stock insuffisant : ${product?.name ?? 'produit'} — ${available} disponible(s) ` +
+          `dans « ${warehouse?.name ?? 'entrepôt'} », ${requested} demandé(s). ` +
+          'Réceptionnez du stock, ou autorisez le stock négatif dans les réglages de la société.',
+      );
+    }
   }
 
   private async assertProduct(companyId: number, productId: number) {

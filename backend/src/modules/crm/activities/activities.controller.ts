@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ActivityStatus, ActivityType } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -21,7 +21,10 @@ import {
 import { ActivitiesService } from './activities.service';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
+import { ListActivitiesDto } from './dto/list-activities.dto';
 
+@ApiTags('crm')
+@ApiBearerAuth()
 @Controller('crm/activities')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class ActivitiesController {
@@ -39,23 +42,8 @@ export class ActivitiesController {
 
   @Get()
   @RequirePermission('crm', 'activities', 'read')
-  findAll(
-    @CompanyId() companyId: number,
-    @Query('status') status?: ActivityStatus,
-    @Query('type') type?: ActivityType,
-    @Query('leadId') leadId?: string,
-    @Query('opportunityId') opportunityId?: string,
-    @Query('partnerId') partnerId?: string,
-    @Query('upcoming') upcoming?: string,
-  ) {
-    return this.activitiesService.findAll(companyId, {
-      status,
-      type,
-      leadId: toId(leadId),
-      opportunityId: toId(opportunityId),
-      partnerId: toId(partnerId),
-      upcoming: upcoming === 'true',
-    });
+  findAll(@CompanyId() companyId: number, @Query() query: ListActivitiesDto) {
+    return this.activitiesService.findAll(companyId, query);
   }
 
   @Get(':id')
@@ -94,10 +82,4 @@ export class ActivitiesController {
   ) {
     return this.activitiesService.remove(companyId, id);
   }
-}
-
-function toId(value?: string): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) ? parsed : undefined;
 }

@@ -13,6 +13,11 @@ export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = {
  * brouillon → impayée (validation) → partiellement réglée → réglée.
  * Les trois derniers statuts ne sont pas pilotés à la main : ils découlent des
  * paiements enregistrés (voir PaymentsService.refreshInvoiceStatus).
+ *
+ * Cette table décrit la forme du cycle ; elle ne suffit pas. Une facture
+ * portant des règlements ne doit ni être annulée ni revenir en brouillon —
+ * sinon on pourrait réécrire ses lignes après encaissement. Ce contrôle-là
+ * dépend des données et vit dans InvoicesService.assertNoSettledPayments().
  */
 export const INVOICE_TRANSITIONS: TransitionMap<InvoiceStatus> = {
   DRAFT: [InvoiceStatus.UNPAID, InvoiceStatus.CANCELLED],

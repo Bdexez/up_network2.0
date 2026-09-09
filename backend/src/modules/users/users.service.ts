@@ -4,8 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -58,17 +60,27 @@ export class UsersService {
   }
 
   /** Ne liste que les membres de la société active. */
-  async findAll(companyId: number) {
-    const links = await this.prisma.userCompany.findMany({
-      where: { companyId },
-      include: {
-        user: { select: USER_SELECT },
-        role: { select: { id: true, name: true } },
-      },
-      orderBy: { assignedAt: 'asc' },
-    });
+  async findAll(companyId: number, params: PageParams = {}) {
+    const page = await paginate(params, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.userCompany.findMany({
+          where: { companyId },
+          include: {
+            user: { select: USER_SELECT },
+            role: { select: { id: true, name: true } },
+          },
+          orderBy: { assignedAt: 'asc' },
+          skip,
+          take,
+        }),
+        this.prisma.userCompany.count({ where: { companyId } }),
+      ]),
+    );
 
-    return links.map((link) => ({ ...link.user, role: link.role }));
+    return {
+      ...page,
+      items: page.items.map((link) => ({ ...link.user, role: link.role })),
+    };
   }
 
   async findOne(companyId: number, id: number) {
@@ -152,22 +164,32 @@ export class UsersService {
     });
 
     if (remaining === 0) {
-      const hasOrders = await this.prisma.order.count({
-        where: { createdById: id },
-      });
-      if (hasOrders > 0) {
-        // On garde le compte pour ne pas casser l'historique des commandes.
+      // Le compte signe des devis, des factures, des règlements, des
+      // mouvements de stock, des saisies de temps… Plutôt que d'énumérer
+      // chaque table — et d'en oublier une à la prochaine fonctionnalité —
+      // on tente la suppression et on retombe sur la désactivation dès
+      // qu'une écriture le référence encore : l'historique reste lisible.
+      try {
+        await this.prisma.user.delete({ where: { id } });
+        return { message: `Utilisateur ${id} supprimé`, deleted: true };
+      } catch (error) {
+        if (!isForeignKeyViolation(error)) throw error;
+
         await this.prisma.user.update({
           where: { id },
           data: { isActive: false },
         });
-        return { message: `Utilisateur ${id} désactivé`, deleted: false };
+        return {
+          message: `Utilisateur ${id} désactivé : son compte reste rattaché à des documents`,
+          deleted: false,
+        };
       }
-      await this.prisma.user.delete({ where: { id } });
-      return { message: `Utilisateur ${id} supprimé`, deleted: true };
     }
 
-    return { message: `Utilisateur ${id} retiré de la société`, deleted: false };
+    return {
+      message: `Utilisateur ${id} retiré de la société`,
+      deleted: false,
+    };
   }
 
   private async assertRole(companyId: number, roleId?: number) {
@@ -180,4 +202,12 @@ export class UsersService {
       throw new NotFoundException("Ce rôle n'existe pas dans cette société");
     }
   }
+}
+
+/** P2003 : une clé étrangère empêche la suppression. */
+function isForeignKeyViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2003'
+  );
 }

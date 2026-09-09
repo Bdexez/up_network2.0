@@ -1,11 +1,18 @@
 import type {
+  ExpenseCategory,
+  ExpenseStatus,
   InvoiceStatus,
+  LeaveStatus,
+  LeaveType,
   OrderStatus,
+  PartnerType,
   PaymentMethod,
+  ProjectStatus,
   ProductType,
   PurchaseOrderStatus,
   QuoteStatus,
   StockMovementType,
+  TaskStatus,
 } from './types';
 
 /** Teintes disponibles sur le composant Badge. */
@@ -103,6 +110,97 @@ export const PURCHASE_FLOW: StatusFlow<PurchaseOrderStatus> = {
   editable: ['DRAFT'],
 };
 
+export const PROJECT_FLOW: StatusFlow<ProjectStatus> = {
+  order: ['DRAFT', 'ACTIVE', 'ON_HOLD', 'CLOSED'],
+  meta: {
+    DRAFT: { label: 'Brouillon', tone: 'neutral' },
+    ACTIVE: { label: 'En cours', tone: 'accent' },
+    ON_HOLD: { label: 'En pause', tone: 'warning' },
+    CLOSED: { label: 'Clôturé', tone: 'good' },
+  },
+  transitions: {
+    DRAFT: ['ACTIVE'],
+    ACTIVE: ['ON_HOLD', 'CLOSED'],
+    ON_HOLD: ['ACTIVE', 'CLOSED'],
+    CLOSED: ['ACTIVE'],
+  },
+  editable: ['DRAFT', 'ACTIVE', 'ON_HOLD'],
+};
+
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  TODO: 'À faire',
+  IN_PROGRESS: 'En cours',
+  DONE: 'Terminée',
+  CANCELLED: 'Annulée',
+};
+
+export const TASK_STATUS_TONE: Record<TaskStatus, Tone> = {
+  TODO: 'neutral',
+  IN_PROGRESS: 'accent',
+  DONE: 'good',
+  CANCELLED: 'critical',
+};
+
+export const LEAVE_FLOW: StatusFlow<LeaveStatus> = {
+  order: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'],
+  meta: {
+    PENDING: { label: 'En attente', tone: 'warning' },
+    APPROVED: { label: 'Approuvée', tone: 'good' },
+    REJECTED: { label: 'Refusée', tone: 'critical' },
+    CANCELLED: { label: 'Annulée', tone: 'neutral' },
+  },
+  transitions: {
+    PENDING: ['APPROVED', 'REJECTED', 'CANCELLED'],
+    APPROVED: ['CANCELLED'],
+  },
+  // Une demande n'a pas de lignes : seule la période reste « modifiable »,
+  // et uniquement tant qu'aucune décision n'est prise.
+  editable: ['PENDING'],
+};
+
+export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = {
+  PAID: 'Congés payés',
+  RTT: 'RTT',
+  SICK: 'Arrêt maladie',
+  UNPAID: 'Congé sans solde',
+  OTHER: 'Autre absence',
+};
+
+export const LEAVE_TYPE_TONE: Record<LeaveType, Tone> = {
+  PAID: 'accent',
+  RTT: 'neutral',
+  SICK: 'serious',
+  UNPAID: 'warning',
+  OTHER: 'neutral',
+};
+
+export const EXPENSE_FLOW: StatusFlow<ExpenseStatus> = {
+  order: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REFUSED', 'REIMBURSED'],
+  meta: {
+    DRAFT: { label: 'Brouillon', tone: 'neutral' },
+    SUBMITTED: { label: 'Soumise', tone: 'accent' },
+    APPROVED: { label: 'Approuvée', tone: 'good' },
+    REFUSED: { label: 'Refusée', tone: 'critical' },
+    REIMBURSED: { label: 'Remboursée', tone: 'good' },
+  },
+  transitions: {
+    DRAFT: ['SUBMITTED'],
+    SUBMITTED: ['APPROVED', 'REFUSED', 'DRAFT'],
+    APPROVED: ['REIMBURSED', 'REFUSED'],
+    REFUSED: ['DRAFT'],
+  },
+  editable: ['DRAFT'],
+};
+
+export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
+  TRAVEL: 'Transport',
+  MEAL: 'Repas',
+  ACCOMMODATION: 'Hébergement',
+  SUPPLIES: 'Fournitures',
+  MILEAGE: 'Frais kilométriques',
+  OTHER: 'Divers',
+};
+
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   TRANSFER: 'Virement',
   CARD: 'Carte bancaire',
@@ -110,6 +208,12 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   CASH: 'Espèces',
   DIRECT_DEBIT: 'Prélèvement',
   OTHER: 'Autre',
+};
+
+export const PARTNER_TYPE_LABEL_MAP: Record<PartnerType, string> = {
+  CUSTOMER: 'Client',
+  SUPPLIER: 'Fournisseur',
+  BOTH: 'Client & fournisseur',
 };
 
 export const PRODUCT_TYPE_LABEL: Record<ProductType, string> = {

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OpportunityStage, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import { MoveStageDto } from './dto/move-stage.dto';
@@ -57,7 +58,11 @@ export class OpportunitiesService {
 
   findAll(
     companyId: number,
-    filters: { stage?: OpportunityStage; search?: string; open?: boolean },
+    filters: {
+      stage?: OpportunityStage;
+      search?: string;
+      open?: boolean;
+    } & PageParams,
   ) {
     const where: Prisma.OpportunityWhereInput = { companyId };
 
@@ -72,11 +77,18 @@ export class OpportunitiesService {
       ];
     }
 
-    return this.prisma.opportunity.findMany({
-      where,
-      include: OPPORTUNITY_INCLUDE,
-      orderBy: [{ stage: 'asc' }, { updatedAt: 'desc' }],
-    });
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.opportunity.findMany({
+          where,
+          include: OPPORTUNITY_INCLUDE,
+          orderBy: [{ stage: 'asc' }, { updatedAt: 'desc' }],
+          skip,
+          take,
+        }),
+        this.prisma.opportunity.count({ where }),
+      ]),
+    );
   }
 
   /** Le pipeline, prêt à afficher : une colonne par étape. */
@@ -122,7 +134,8 @@ export class OpportunitiesService {
     await this.assertOwner(companyId, data.ownerId);
 
     const nextStage = data.stage ?? current.stage;
-    const stageChanged = data.stage !== undefined && data.stage !== current.stage;
+    const stageChanged =
+      data.stage !== undefined && data.stage !== current.stage;
 
     return this.prisma.opportunity.update({
       where: { id },
@@ -140,7 +153,8 @@ export class OpportunitiesService {
           : undefined,
         partnerId: data.partnerId,
         ownerId: data.ownerId,
-        lostReason: nextStage === OpportunityStage.LOST ? data.lostReason : null,
+        lostReason:
+          nextStage === OpportunityStage.LOST ? data.lostReason : null,
         closedAt: stageChanged
           ? CLOSED_STAGES.includes(nextStage)
             ? new Date()

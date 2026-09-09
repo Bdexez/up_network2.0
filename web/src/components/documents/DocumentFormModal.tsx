@@ -8,7 +8,7 @@ import {
   toLinePayload,
   type DraftLine,
 } from './LineEditor';
-import type { Partner, Product } from '../../lib/types';
+import { CURRENCIES, type PartnerOption, type ProductOption } from '../../lib/types';
 
 export interface DocumentFormValues {
   partnerId: string;
@@ -16,6 +16,11 @@ export interface DocumentFormValues {
   secondaryDate: string;
   notes: string;
   lines: DraftLine[];
+  currency: string;
+  /** Taux vers la devise société ; ignoré si la devise est celle de la société. */
+  exchangeRate: string;
+  /** Version lue à l'ouverture, renvoyée pour détecter un conflit d'édition. */
+  version?: number;
 }
 
 const EMPTY_FORM: DocumentFormValues = {
@@ -24,6 +29,8 @@ const EMPTY_FORM: DocumentFormValues = {
   secondaryDate: '',
   notes: '',
   lines: [{ ...EMPTY_LINE }],
+  currency: '',
+  exchangeRate: '1',
 };
 
 /**
@@ -38,6 +45,7 @@ export function DocumentFormModal({
   secondaryDateLabel,
   partners,
   products,
+  companyCurrency,
   initial,
   loading,
   useCostPrice = false,
@@ -49,8 +57,10 @@ export function DocumentFormModal({
   title: string;
   partnerLabel: string;
   secondaryDateLabel: string;
-  partners: Partner[];
-  products: Product[];
+  partners: PartnerOption[];
+  products: ProductOption[];
+  /** Devise de tenue de comptes, pour n'exiger un taux que si nécessaire. */
+  companyCurrency: string;
   initial?: DocumentFormValues;
   loading: boolean;
   useCostPrice?: boolean;
@@ -63,6 +73,9 @@ export function DocumentFormModal({
     secondaryDate?: string;
     notes?: string;
     lines: ReturnType<typeof toLinePayload>;
+    currency?: string;
+    exchangeRate?: number;
+    version?: number;
   }) => void;
 }) {
   const [form, setForm] = useState<DocumentFormValues>(EMPTY_FORM);
@@ -93,6 +106,14 @@ export function DocumentFormModal({
         : undefined,
       notes: form.notes || undefined,
       lines,
+      // Le taux n'est transmis que pour une devise étrangère : dans la devise
+      // société, l'API le force à 1 de toute façon.
+      currency: form.currency || undefined,
+      exchangeRate:
+        form.currency && form.currency !== companyCurrency
+          ? Number(form.exchangeRate) || undefined
+          : undefined,
+      version: form.version,
     });
   };
 
@@ -147,6 +168,37 @@ export function DocumentFormModal({
               setForm((current) => ({ ...current, secondaryDate: event.target.value }))
             }
           />
+
+          <Select
+            label="Devise"
+            value={form.currency || companyCurrency}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, currency: event.target.value }))
+            }
+          >
+            {CURRENCIES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+                {code === companyCurrency ? ' (société)' : ''}
+              </option>
+            ))}
+          </Select>
+
+          {(form.currency || companyCurrency) !== companyCurrency && (
+            <Input
+              label={`Taux vers ${companyCurrency}`}
+              type="number"
+              min="0"
+              step="0.0001"
+              required
+              hint="Figé à l'enregistrement du document"
+              value={form.exchangeRate}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, exchangeRate: event.target.value }))
+              }
+            />
+          )}
+
           {extraFields}
         </div>
 

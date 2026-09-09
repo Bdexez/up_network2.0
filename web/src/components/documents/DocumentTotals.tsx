@@ -12,6 +12,7 @@ export function DocumentTotals({
   vatBreakdown,
   paidAmount,
   remainingAmount,
+  currency = 'EUR',
   compact = false,
 }: {
   totalHT: number;
@@ -20,29 +21,31 @@ export function DocumentTotals({
   vatBreakdown?: VatBreakdownEntry[];
   paidAmount?: number;
   remainingAmount?: number;
+  /** Devise du document ; les montants y sont exprimés. */
+  currency?: string;
   compact?: boolean;
 }) {
   const rows = vatBreakdown?.length
     ? vatBreakdown.map((entry) => ({
         label: `TVA ${formatRate(entry.rate)} %`,
-        value: money(entry.amount, true),
+        value: money(entry.amount, true, currency),
       }))
-    : [{ label: 'TVA', value: money(totalVat, true) }];
+    : [{ label: 'TVA', value: money(totalVat, true, currency) }];
 
   return (
     <dl className={compact ? 'w-full text-[13px]' : 'w-full max-w-xs text-sm'}>
-      <Row label="Total HT" value={money(totalHT, true)} />
+      <Row label="Total HT" value={money(totalHT, true, currency)} />
       {rows.map((row) => (
         <Row key={row.label} label={row.label} value={row.value} muted />
       ))}
-      <Row label="Total TTC" value={money(totalTTC, true)} strong />
+      <Row label="Total TTC" value={money(totalTTC, true, currency)} strong />
 
       {paidAmount !== undefined && paidAmount > 0 && (
         <>
-          <Row label="Déjà réglé" value={money(paidAmount, true)} muted />
+          <Row label="Déjà réglé" value={money(paidAmount, true, currency)} muted />
           <Row
             label="Reste à payer"
-            value={money(remainingAmount ?? totalTTC - paidAmount, true)}
+            value={money(remainingAmount ?? totalTTC - paidAmount, true, currency)}
             strong
           />
         </>

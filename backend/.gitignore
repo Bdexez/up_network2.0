@@ -57,5 +57,9 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
 
-# Factures PDF générées à l'exécution
+# Documents PDF générés à l'exécution
+/documents
 /invoices
+
+# Pièces jointes déposées par les utilisateurs
+/uploads

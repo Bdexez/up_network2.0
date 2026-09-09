@@ -7,6 +7,7 @@ const PREFIX: Record<DocumentType, string> = {
   QUOTE: 'DE',
   ORDER: 'CO',
   INVOICE: 'FA',
+  CREDIT_NOTE: 'AV',
   PURCHASE_ORDER: 'CF',
 };
 
@@ -18,9 +19,13 @@ export class NumberingService {
    * Réserve le numéro suivant pour une société, un type et une année :
    * « FA2026-0001 », « CO2026-0042 »…
    *
-   * À appeler **dans la transaction qui crée le document** : l'upsert prend un
-   * verrou sur la ligne de compteur, ce qui sérialise deux créations
-   * simultanées et empêche deux documents de porter la même référence.
+   * À appeler **dans la transaction qui crée le document**.
+   *
+   * L'incrément passe par un `INSERT … ON CONFLICT DO UPDATE` : PostgreSQL
+   * garantit l'atomicité même quand la ligne de compteur n'existe pas encore.
+   * Un `upsert` Prisma ferait un SELECT puis un INSERT ou un UPDATE, ce qui
+   * laisse deux transactions simultanées créer la même ligne — la seconde
+   * échouerait sur la contrainte d'unicité au tout premier document de l'année.
    */
   async next(
     tx: Prisma.TransactionClient,
@@ -30,13 +35,16 @@ export class NumberingService {
   ): Promise<string> {
     const year = at.getFullYear();
 
-    const counter = await tx.documentCounter.upsert({
-      where: { companyId_type_year: { companyId, type, year } },
-      update: { value: { increment: 1 } },
-      create: { companyId, type, year, value: 1 },
-    });
+    const rows = await tx.$queryRaw<{ value: number }[]>`
+      INSERT INTO "DocumentCounter" ("companyId", "type", "year", "value")
+      VALUES (${companyId}, ${type}::"DocumentType", ${year}, 1)
+      ON CONFLICT ("companyId", "type", "year")
+      DO UPDATE SET "value" = "DocumentCounter"."value" + 1
+      RETURNING "value"
+    `;
 
-    return `${PREFIX[type]}${year}-${String(counter.value).padStart(4, '0')}`;
+    const value = rows[0]?.value ?? 1;
+    return `${PREFIX[type]}${year}-${String(value).padStart(4, '0')}`;
   }
 
   /** Version hors transaction, pour les cas sans autre écriture à grouper. */

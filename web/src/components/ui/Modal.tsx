@@ -34,24 +34,61 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
 
+    // Élément à re-focaliser à la fermeture, pour ne pas perdre le fil au clavier.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const focusableIn = (root: HTMLElement) =>
+      [
+        ...root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => element.offsetParent !== null || element === root);
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      // Piège de focus : Tab ne doit pas sortir de la boîte de dialogue.
+      if (event.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = focusableIn(panelRef.current);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panelRef.current.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || active === panelRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener('keydown', onKeyDown);
 
     // On empêche la page de défiler derrière la boîte de dialogue.
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Premier champ focusable, sinon le panneau lui-même.
-    const focusable = panelRef.current?.querySelector<HTMLElement>(
-      'input, select, textarea, button:not([aria-label="Fermer"])',
+    // Premier champ de saisie, sinon le panneau lui-même.
+    const firstField = panelRef.current?.querySelector<HTMLElement>(
+      'input, select, textarea',
     );
-    (focusable ?? panelRef.current)?.focus();
+    (firstField ?? panelRef.current)?.focus();
 
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
     };
   }, [open, onClose]);
 

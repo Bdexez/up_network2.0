@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, errorMessage } from '../../lib/api';
-import { useList, useWrite } from '../../lib/hooks';
+import { useList, usePage, useWrite } from '../../lib/hooks';
 import { relativeDate } from '../../lib/format';
 import { ACTIVITY_TYPE_LABEL } from '../../lib/labels';
 import { P } from '../../lib/permissions';
@@ -20,7 +20,7 @@ import type {
   ActivityType,
   Lead,
   Opportunity,
-  Partner,
+  PartnerOption,
 } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
 import { Button } from '../../components/ui/Button';
@@ -57,7 +57,11 @@ export function ActivitiesPage() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Activity | null>(null);
 
-  const activities = useList<Activity>(['crm', 'activities'], '/crm/activities');
+  // 200 activités couvrent largement les deux colonnes affichées ; au-delà,
+  // l'écran de liste filtrée reste le bon outil.
+  const activities = usePage<Activity>(['crm', 'activities'], '/crm/activities', {
+    perPage: 200,
+  });
 
   const toggle = useWrite<number>(
     async (id) => (await api.patch(`/crm/activities/${id}/toggle`)).data,
@@ -69,8 +73,8 @@ export function ActivitiesPage() {
     { invalidate: [['crm'], ['dashboard']], success: 'Activité supprimée' },
   );
 
-  const planned = activities.data?.filter((item) => item.status === 'PLANNED') ?? [];
-  const done = activities.data?.filter((item) => item.status !== 'PLANNED') ?? [];
+  const planned = activities.items.filter((item) => item.status === 'PLANNED');
+  const done = activities.items.filter((item) => item.status !== 'PLANNED');
   const now = Date.now();
 
   return (
@@ -98,7 +102,7 @@ export function ActivitiesPage() {
             onRetry={() => void activities.refetch()}
           />
         </Card>
-      ) : (activities.data?.length ?? 0) === 0 ? (
+      ) : activities.items.length === 0 ? (
         <Card>
           <EmptyState
             icon={<CalendarCheck size={26} />}
@@ -251,9 +255,19 @@ function ActivityRow({
 }
 
 function ActivityForm({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const leads = useList<Lead>(['crm', 'leads'], '/crm/leads');
-  const opportunities = useList<Opportunity>(['crm', 'opportunities'], '/crm/opportunities');
-  const partners = useList<Partner>(['partners'], '/partners');
+  // Sélecteurs de rattachement : on prend une page large plutôt que la
+  // pagination par défaut, pour ne pas tronquer les choix possibles.
+  const leads = usePage<Lead>(['crm', 'leads'], '/crm/leads', { perPage: 200 });
+  const opportunities = usePage<Opportunity>(
+    ['crm', 'opportunities'],
+    '/crm/opportunities',
+    { perPage: 200 },
+  );
+  const partners = useList<PartnerOption>(
+    ['partner-options', 'customer'],
+    '/partners/options',
+    { type: 'CUSTOMER' },
+  );
 
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState('');
@@ -330,18 +344,18 @@ function ActivityForm({ open, onClose }: { open: boolean; onClose: () => void })
         <div className="sm:col-span-2">
           <Select label="Rattachée à" required value={form.target} onChange={update('target')}>
             <option value="">Sélectionner…</option>
-            {(opportunities.data?.length ?? 0) > 0 && (
+            {opportunities.items.length > 0 && (
               <optgroup label="Opportunités">
-                {opportunities.data?.map((opportunity) => (
+                {opportunities.items.map((opportunity) => (
                   <option key={`o-${opportunity.id}`} value={`opportunity:${opportunity.id}`}>
                     {opportunity.name}
                   </option>
                 ))}
               </optgroup>
             )}
-            {(leads.data?.length ?? 0) > 0 && (
+            {leads.items.length > 0 && (
               <optgroup label="Pistes">
-                {leads.data?.map((lead) => (
+                {leads.items.map((lead) => (
                   <option key={`l-${lead.id}`} value={`lead:${lead.id}`}>
                     {lead.name}
                   </option>

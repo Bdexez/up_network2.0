@@ -8,7 +8,14 @@ import {
   type ReactNode,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, getToken, setToken, UNAUTHORIZED_EVENT } from '../lib/api';
+import {
+  api,
+  clearSession,
+  getRefreshToken,
+  getToken,
+  setSession,
+  UNAUTHORIZED_EVENT,
+} from '../lib/api';
 import type { Profile, Session } from '../lib/types';
 
 interface LoginPayload {
@@ -46,8 +53,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
 
-  const clearSession = useCallback(() => {
-    setToken(null);
+  /** Ferme la session localement : jetons effacés, cache vidé. */
+  const endSession = useCallback(() => {
+    clearSession();
     setUser(null);
     queryClient.clear();
   }, [queryClient]);
@@ -66,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data } = await api.get<Profile>('/auth/me');
         if (!cancelled) setUser(data);
       } catch {
-        if (!cancelled) clearSession();
+        if (!cancelled) endSession();
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -76,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [clearSession]);
+  }, [endSession]);
 
   // Un 401 sur n'importe quelle requête met fin à la session.
   useEffect(() => {
@@ -90,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const applySession = useCallback(
     (session: Session) => {
-      setToken(session.accessToken);
+      setSession(session.accessToken, session.refreshToken);
       setUser(session.user);
       queryClient.clear();
     },
@@ -137,13 +145,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       login,
       register,
-      logout: clearSession,
+      logout: async () => {
+        const refreshToken = getRefreshToken();
+        // On révoque côté serveur, mais on ferme la session localement quoi
+        // qu'il arrive : l'utilisateur ne doit pas rester connecté si l'API
+        // est injoignable.
+        if (refreshToken) {
+          await api.post('/auth/logout', { refreshToken }).catch(() => undefined);
+        }
+        endSession();
+      },
       switchCompany,
       refresh,
       can: (permission) => permissions.has(permission),
       canAny: (...list) => list.some((permission) => permissions.has(permission)),
     };
-  }, [user, loading, login, register, clearSession, switchCompany, refresh]);
+  }, [user, loading, login, register, endSession, switchCompany, refresh]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

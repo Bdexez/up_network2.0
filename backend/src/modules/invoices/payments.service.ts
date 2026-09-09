@@ -85,7 +85,10 @@ export class PaymentsService {
    * écriture de règlement : `paidAmount` et `status` sont dérivés des paiements,
    * jamais saisis à la main.
    */
-  private async refreshInvoice(tx: Prisma.TransactionClient, invoiceId: number) {
+  private async refreshInvoice(
+    tx: Prisma.TransactionClient,
+    invoiceId: number,
+  ) {
     const invoice = await tx.invoice.findUniqueOrThrow({
       where: { id: invoiceId },
       select: { totalTTC: true, status: true },

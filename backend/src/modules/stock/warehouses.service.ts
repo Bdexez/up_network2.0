@@ -23,7 +23,8 @@ export class WarehousesService {
         });
       }
 
-      const isFirst = (await tx.warehouse.count({ where: { companyId } })) === 0;
+      const isFirst =
+        (await tx.warehouse.count({ where: { companyId } })) === 0;
 
       return tx.warehouse.create({
         data: { ...dto, companyId, isDefault: dto.isDefault ?? isFirst },
@@ -41,7 +42,9 @@ export class WarehousesService {
     return warehouses.map(({ stocks, ...warehouse }) => ({
       ...warehouse,
       references: stocks.length,
-      totalQuantity: round2(stocks.reduce((acc, stock) => acc + stock.quantity, 0)),
+      totalQuantity: round2(
+        stocks.reduce((acc, stock) => acc + stock.quantity, 0),
+      ),
     }));
   }
 
@@ -100,7 +103,10 @@ export class WarehousesService {
     }
 
     await this.prisma.warehouse.delete({ where: { id } });
-    return { message: `Entrepôt « ${warehouse.name} » supprimé`, archived: false };
+    return {
+      message: `Entrepôt « ${warehouse.name} » supprimé`,
+      archived: false,
+    };
   }
 
   private async assertCodeFree(companyId: number, code: string) {
@@ -108,6 +114,7 @@ export class WarehousesService {
       where: { companyId_code: { companyId, code } },
       select: { id: true },
     });
-    if (taken) throw new ConflictException(`Le code « ${code} » est déjà utilisé`);
+    if (taken)
+      throw new ConflictException(`Le code « ${code} » est déjà utilisé`);
   }
 }

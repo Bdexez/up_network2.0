@@ -11,15 +11,19 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import { CompanyId } from 'src/common/decorators/current-user.decorator';
+import { SearchPaginationDto } from 'src/common/pagination/search-pagination.dto';
 import { PartnersService } from './partners.service';
 import { ContactsService } from './contacts.service';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { UpdatePartnerDto } from './dto/update-partner.dto';
 import { CreateContactDto, UpdateContactDto } from './dto/contact.dto';
 
+@ApiTags('crm')
+@ApiBearerAuth()
 @Controller('partners')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class PartnersController {
@@ -36,8 +40,18 @@ export class PartnersController {
 
   @Get()
   @RequirePermission('crm', 'partners', 'read')
-  findAll(@CompanyId() companyId: number, @Query('search') search?: string) {
-    return this.partnersService.findAll(companyId, search);
+  findAll(@CompanyId() companyId: number, @Query() query: SearchPaginationDto) {
+    return this.partnersService.findAll(companyId, query);
+  }
+
+  /** Liste allégée et complète, destinée aux sélecteurs de formulaire. */
+  @Get('options')
+  @RequirePermission('crm', 'partners', 'read')
+  findOptions(
+    @CompanyId() companyId: number,
+    @Query('type') type?: 'CUSTOMER' | 'SUPPLIER',
+  ) {
+    return this.partnersService.findOptions(companyId, type);
   }
 
   @Get(':id')

@@ -1,14 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { PackageCheck, Pencil, Plus, ShoppingCart, Trash2 } from 'lucide-react';
+import {
+  Download,
+  PackageCheck,
+  Pencil,
+  Plus,
+  ShoppingCart,
+  Trash2,
+} from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { useList, useWrite } from '../../lib/hooks';
+import { useList, usePage, usePagination, useWrite } from '../../lib/hooks';
+import { useFileDownload } from '../../lib/download';
 import { formatDate, money } from '../../lib/format';
 import { PURCHASE_FLOW } from '../../lib/documents';
 import { P } from '../../lib/permissions';
 import type {
-  Partner,
-  Product,
+  PartnerOption,
+  ProductOption,
   PurchaseOrder,
   PurchaseOrderStatus,
   Warehouse,
@@ -25,15 +33,18 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 import { DocumentFormModal } from '../../components/documents/DocumentFormModal';
 import { DocumentLines } from '../../components/documents/DocumentLines';
 import { DocumentTotals } from '../../components/documents/DocumentTotals';
 import { StatusActions } from '../../components/documents/StatusActions';
 import { StatusBadge } from '../../components/documents/StatusBadge';
 import { toDraftLines } from '../../components/documents/LineEditor';
+import { Attachments } from '../../components/documents/Attachments';
 
 export function PurchasesPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const companyCurrency = user?.company?.currency ?? 'EUR';
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -41,13 +52,18 @@ export function PurchasesPage() {
   const [deleting, setDeleting] = useState<PurchaseOrder | null>(null);
   const [receiving, setReceiving] = useState<PurchaseOrder | null>(null);
 
-  const orders = useList<PurchaseOrder>(
-    ['purchases'],
-    '/purchases',
-    status ? { status } : undefined,
+  const pdf = useFileDownload();
+  const pagination = usePagination();
+  const orders = usePage<PurchaseOrder>(['purchases'], '/purchases', {
+    ...pagination.params,
+    ...(status ? { status } : {}),
+  });
+  const suppliers = useList<PartnerOption>(
+    ['partner-options', 'supplier'],
+    '/partners/options',
+    { type: 'SUPPLIER' },
   );
-  const partners = useList<Partner>(['partners'], '/partners');
-  const products = useList<Product>(['products'], '/products');
+  const products = useList<ProductOption>(['product-options'], '/products/options');
 
   const detail = useQuery({
     queryKey: ['purchases', 'detail', openId ?? editingId],
@@ -92,13 +108,13 @@ export function PurchasesPage() {
             date: editing.date.slice(0, 10),
             secondaryDate: editing.expectedDate?.slice(0, 10) ?? '',
             notes: editing.notes ?? '',
+            version: editing.version,
+            currency: editing.currency,
+            exchangeRate: String(editing.exchangeRate),
             lines: toDraftLines(editing.lines),
           }
         : undefined,
     [editing],
-  );
-  const suppliers = (partners.data ?? []).filter(
-    (partner) => partner.isActive && partner.type !== 'CUSTOMER',
   );
 
   return (
@@ -110,7 +126,10 @@ export function PurchasesPage() {
           <>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                pagination.reset();
+              }}
               aria-label="Filtrer par statut"
               className="h-9 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm text-ink hover:border-line-strong focus:border-accent"
             >
@@ -135,7 +154,7 @@ export function PurchasesPage() {
           <Spinner />
         ) : orders.isError ? (
           <ErrorState message={errorMessage(orders.error)} onRetry={() => void orders.refetch()} />
-        ) : (orders.data?.length ?? 0) === 0 ? (
+        ) : orders.items.length === 0 ? (
           <EmptyState
             icon={<ShoppingCart size={26} />}
             title={status ? 'Aucun résultat' : 'Aucune commande fournisseur'}
@@ -166,7 +185,7 @@ export function PurchasesPage() {
               </tr>
             </thead>
             <tbody>
-              {orders.data?.map((order) => (
+              {orders.items.map((order) => (
                 <Tr key={order.id} onClick={() => setOpenId(order.id)}>
                   <Td className="font-medium text-ink">{order.ref}</Td>
                   <Td>{order.supplier.name}</Td>
@@ -174,10 +193,10 @@ export function PurchasesPage() {
                     <StatusBadge status={order.status} flow={PURCHASE_FLOW} />
                   </Td>
                   <Td align="right" numeric>
-                    {money(order.totalHT, true)}
+                    {money(order.totalHT, true, order.currency)}
                   </Td>
                   <Td align="right" numeric className="font-medium text-ink">
-                    {money(order.totalTTC, true)}
+                    {money(order.totalTTC, true, order.currency)}
                   </Td>
                   <Td align="right" numeric>
                     {formatDate(order.expectedDate)}
@@ -187,6 +206,21 @@ export function PurchasesPage() {
                       className="flex justify-end gap-1"
                       onClick={(event) => event.stopPropagation()}
                     >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Download size={14} />}
+                        loading={pdf.pendingId === order.id}
+                        onClick={() =>
+                          void pdf.download(
+                            `/purchases/${order.id}/pdf`,
+                            `${order.ref}.pdf`,
+                            order.id,
+                          )
+                        }
+                      >
+                        PDF
+                      </Button>
                       {order.status === 'ORDERED' && can(P.purchasesUpdate) && (
                         <Button
                           size="sm"
@@ -224,6 +258,15 @@ export function PurchasesPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={orders.page}
+          totalPages={orders.totalPages}
+          total={orders.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="commandes"
+        />
       </Card>
 
       <DocumentFormModal
@@ -231,8 +274,9 @@ export function PurchasesPage() {
         title={editing ? `Modifier la commande ${editing.ref}` : 'Nouvelle commande fournisseur'}
         partnerLabel="Fournisseur"
         secondaryDateLabel="Réception attendue"
-        partners={suppliers}
+        partners={suppliers.data ?? []}
         products={products.data ?? []}
+        companyCurrency={companyCurrency}
         loading={save.isPending}
         useCostPrice
         initial={initialValues}
@@ -247,6 +291,9 @@ export function PurchasesPage() {
                 expectedDate: payload.secondaryDate,
                 notes: payload.notes,
                 lines: payload.lines,
+                version: payload.version,
+                currency: payload.currency,
+                exchangeRate: payload.exchangeRate,
               },
             },
             { onSuccess: closeForm },
@@ -299,8 +346,11 @@ export function PurchasesPage() {
                 totalVat={detail.data.totalVat}
                 totalTTC={detail.data.totalTTC}
                 vatBreakdown={detail.data.vatBreakdown}
+                currency={detail.data.currency}
               />
             </div>
+
+            <Attachments entity="PURCHASE_ORDER" entityId={detail.data.id} />
           </div>
         )}
       </Modal>

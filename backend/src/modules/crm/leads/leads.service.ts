@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { LeadStatus, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
@@ -32,7 +33,10 @@ export class LeadsService {
     });
   }
 
-  findAll(companyId: number, filters: { status?: LeadStatus; search?: string }) {
+  findAll(
+    companyId: number,
+    filters: { status?: LeadStatus; search?: string } & PageParams,
+  ) {
     const where: Prisma.LeadWhereInput = { companyId };
 
     if (filters.status) where.status = filters.status;
@@ -47,11 +51,18 @@ export class LeadsService {
       ];
     }
 
-    return this.prisma.lead.findMany({
-      where,
-      include: LEAD_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.lead.findMany({
+          where,
+          include: LEAD_INCLUDE,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.lead.count({ where }),
+      ]),
+    );
   }
 
   async findOne(companyId: number, id: number) {

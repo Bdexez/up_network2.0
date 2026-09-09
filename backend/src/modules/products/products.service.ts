@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
@@ -31,21 +32,46 @@ export class ProductsService {
     });
   }
 
-  findAll(companyId: number, search?: string) {
+  findAll(companyId: number, filters: { search?: string } & PageParams) {
     const where: Prisma.ProductWhereInput = { companyId };
 
-    if (search?.trim()) {
-      const q = search.trim();
+    if (filters.search?.trim()) {
+      const q = filters.search.trim();
       where.OR = [
         { name: { contains: q, mode: 'insensitive' } },
         { sku: { contains: q, mode: 'insensitive' } },
       ];
     }
 
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.product.findMany({
+          where,
+          include: { stocks: { select: { quantity: true } } },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+        }),
+        this.prisma.product.count({ where }),
+      ]),
+    );
+  }
+
+  /** Catalogue complet et allégé, pour les sélecteurs de lignes de document. */
+  findOptions(companyId: number) {
     return this.prisma.product.findMany({
-      where,
-      include: { stocks: { select: { quantity: true } } },
-      orderBy: { createdAt: 'desc' },
+      where: { companyId },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        price: true,
+        costPrice: true,
+        vatRate: true,
+        type: true,
+        manageStock: true,
+      },
+      orderBy: { name: 'asc' },
     });
   }
 
@@ -70,12 +96,13 @@ export class ProductsService {
 
     // Un produit référencé par un document commercial n'est jamais supprimé :
     // cela viderait le libellé d'une facture déjà émise.
-    const [orderLines, quoteLines, invoiceLines, purchaseLines] = await Promise.all([
-      this.prisma.orderLine.count({ where: { productId: id } }),
-      this.prisma.quoteLine.count({ where: { productId: id } }),
-      this.prisma.invoiceLine.count({ where: { productId: id } }),
-      this.prisma.purchaseOrderLine.count({ where: { productId: id } }),
-    ]);
+    const [orderLines, quoteLines, invoiceLines, purchaseLines] =
+      await Promise.all([
+        this.prisma.orderLine.count({ where: { productId: id } }),
+        this.prisma.quoteLine.count({ where: { productId: id } }),
+        this.prisma.invoiceLine.count({ where: { productId: id } }),
+        this.prisma.purchaseOrderLine.count({ where: { productId: id } }),
+      ]);
     const linesCount = orderLines + quoteLines + invoiceLines + purchaseLines;
 
     if (linesCount > 0) {

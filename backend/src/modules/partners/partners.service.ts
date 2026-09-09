@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
 import { CreatePartnerDto } from './dto/create-partner.dto';
 import { UpdatePartnerDto } from './dto/update-partner.dto';
 
@@ -12,7 +13,55 @@ export class PartnersService {
     return this.prisma.partner.create({ data: { ...data, companyId } });
   }
 
-  findAll(companyId: number, search?: string) {
+  findAll(companyId: number, filters: { search?: string } & PageParams) {
+    const where = this.buildWhere(companyId, filters.search);
+
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.partner.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            _count: {
+              select: {
+                orders: true,
+                quotes: true,
+                invoices: true,
+                opportunities: true,
+              },
+            },
+          },
+          skip,
+          take,
+        }),
+        this.prisma.partner.count({ where }),
+      ]),
+    );
+  }
+
+  /**
+   * Liste allégée pour les sélecteurs de formulaire : pas de pagination, mais
+   * seulement l'identité. Une liste paginée y tronquerait silencieusement les
+   * choix possibles.
+   */
+  findOptions(companyId: number, type?: 'CUSTOMER' | 'SUPPLIER') {
+    const where: Prisma.PartnerWhereInput = { companyId, isActive: true };
+
+    // « BOTH » est à la fois client et fournisseur : il figure dans les deux listes.
+    if (type === 'CUSTOMER') where.type = { in: ['CUSTOMER', 'BOTH'] };
+    if (type === 'SUPPLIER') where.type = { in: ['SUPPLIER', 'BOTH'] };
+
+    return this.prisma.partner.findMany({
+      where,
+      select: { id: true, name: true, type: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  private buildWhere(
+    companyId: number,
+    search?: string,
+  ): Prisma.PartnerWhereInput {
     const where: Prisma.PartnerWhereInput = { companyId };
 
     if (search?.trim()) {
@@ -25,15 +74,7 @@ export class PartnersService {
       ];
     }
 
-    return this.prisma.partner.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { orders: true, quotes: true, invoices: true, opportunities: true },
-        },
-      },
-    });
+    return where;
   }
 
   async findOne(companyId: number, id: number) {

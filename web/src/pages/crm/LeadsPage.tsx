@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRightLeft, Pencil, Plus, Target, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api';
-import { useDebounced, useList, useWrite } from '../../lib/hooks';
+import { useDebounced, useList, usePage, usePagination, useWrite } from '../../lib/hooks';
 import { formatDate, money } from '../../lib/format';
 import { LEAD_STATUS_LABEL, LEAD_STATUS_ORDER } from '../../lib/labels';
 import { P } from '../../lib/permissions';
-import type { Lead, LeadStatus, Partner } from '../../lib/types';
+import type { Lead, LeadStatus, PartnerOption } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
 import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea } from '../../components/ui/Field';
@@ -20,6 +20,7 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 
 const STATUS_TONE: Record<LeadStatus, 'neutral' | 'accent' | 'good' | 'critical'> = {
   NEW: 'neutral',
@@ -51,15 +52,12 @@ export function LeadsPage() {
   const [deleting, setDeleting] = useState<Lead | null>(null);
   const [converting, setConverting] = useState<Lead | null>(null);
 
-  const params: Record<string, string> = {};
-  if (debouncedSearch) params.search = debouncedSearch;
-  if (status) params.status = status;
-
-  const leads = useList<Lead>(
-    ['crm', 'leads'],
-    '/crm/leads',
-    Object.keys(params).length ? params : undefined,
-  );
+  const pagination = usePagination();
+  const leads = usePage<Lead>(['crm', 'leads'], '/crm/leads', {
+    ...pagination.params,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(status ? { status } : {}),
+  });
 
   const save = useWrite<{ id?: number; body: typeof EMPTY }>(
     async ({ id, body }) => {
@@ -94,10 +92,20 @@ export function LeadsPage() {
         description="Les contacts entrants, avant qualification."
         actions={
           <>
-            <SearchInput value={search} onChange={setSearch} placeholder="Nom, société, e-mail…" />
+            <SearchInput
+              value={search}
+              onChange={(value) => {
+                setSearch(value);
+                pagination.reset();
+              }}
+              placeholder="Nom, société, e-mail…"
+            />
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                pagination.reset();
+              }}
               aria-label="Filtrer par statut"
               className="h-9 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm text-ink hover:border-line-strong focus:border-accent"
             >
@@ -122,7 +130,7 @@ export function LeadsPage() {
           <Spinner />
         ) : leads.isError ? (
           <ErrorState message={errorMessage(leads.error)} onRetry={() => void leads.refetch()} />
-        ) : (leads.data?.length ?? 0) === 0 ? (
+        ) : leads.items.length === 0 ? (
           <EmptyState
             icon={<Target size={26} />}
             title={search || status ? 'Aucun résultat' : 'Aucune piste'}
@@ -153,7 +161,7 @@ export function LeadsPage() {
               </tr>
             </thead>
             <tbody>
-              {leads.data?.map((lead) => (
+              {leads.items.map((lead) => (
                 <Tr key={lead.id}>
                   <Td>
                     <span className="font-medium text-ink">{lead.name}</span>
@@ -219,6 +227,15 @@ export function LeadsPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={leads.page}
+          totalPages={leads.totalPages}
+          total={leads.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="pistes"
+        />
       </Card>
 
       <LeadForm
@@ -348,7 +365,11 @@ function LeadForm({
 }
 
 function ConvertDialog({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
-  const partners = useList<Partner>(['partners'], '/partners');
+  const partners = useList<PartnerOption>(
+    ['partner-options', 'customer'],
+    '/partners/options',
+    { type: 'CUSTOMER' },
+  );
   const [partnerId, setPartnerId] = useState('');
   const [createOpportunity, setCreateOpportunity] = useState(true);
   const [amount, setAmount] = useState('');

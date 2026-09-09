@@ -65,13 +65,22 @@ export function computeDocumentTotals(
   const vatBreakdown = [...byRate.entries()]
     .filter(([rate]) => rate > 0)
     .sort((a, b) => a[0] - b[0])
-    .map(([rate, bucket]) => ({ rate, base: bucket.base, amount: bucket.amount }));
+    .map(([rate, bucket]) => ({
+      rate,
+      base: bucket.base,
+      amount: bucket.amount,
+    }));
 
   const totalVat = round2(
     vatBreakdown.reduce((acc, entry) => acc + entry.amount, 0),
   );
 
-  return { totalHT, totalVat, totalTTC: round2(totalHT + totalVat), vatBreakdown };
+  return {
+    totalHT,
+    totalVat,
+    totalTTC: round2(totalHT + totalVat),
+    vatBreakdown,
+  };
 }
 
 function clampPercent(value: number): number {

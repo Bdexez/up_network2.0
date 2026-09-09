@@ -8,10 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { QuoteStatus } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -22,7 +24,10 @@ import { QuotesService } from './quotes.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 import { ChangeQuoteStatusDto } from './dto/change-quote-status.dto';
+import { ListQuotesDto } from './dto/list-quotes.dto';
 
+@ApiTags('sales')
+@ApiBearerAuth()
 @Controller('quotes')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class QuotesController {
@@ -40,15 +45,25 @@ export class QuotesController {
 
   @Get()
   @RequirePermission('sales', 'quotes', 'read')
-  findAll(
+  findAll(@CompanyId() companyId: number, @Query() query: ListQuotesDto) {
+    return this.quotesService.findAll(companyId, query);
+  }
+
+  @Get(':id/pdf')
+  @RequirePermission('sales', 'quotes', 'read')
+  async downloadPdf(
     @CompanyId() companyId: number,
-    @Query('status') status?: QuoteStatus,
-    @Query('partnerId') partnerId?: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
   ) {
-    return this.quotesService.findAll(companyId, {
-      status,
-      partnerId: partnerId ? Number(partnerId) : undefined,
-    });
+    const { buffer, fileName } = await this.quotesService.renderPdf(
+      companyId,
+      id,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
   }
 
   @Get(':id')

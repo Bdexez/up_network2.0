@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { OpportunityStage } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -22,7 +22,10 @@ import { OpportunitiesService } from './opportunities.service';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import { MoveStageDto } from './dto/move-stage.dto';
+import { ListOpportunitiesDto } from './dto/list-opportunities.dto';
 
+@ApiTags('crm')
+@ApiBearerAuth()
 @Controller('crm/opportunities')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class OpportunitiesController {
@@ -42,15 +45,9 @@ export class OpportunitiesController {
   @RequirePermission('crm', 'opportunities', 'read')
   findAll(
     @CompanyId() companyId: number,
-    @Query('stage') stage?: OpportunityStage,
-    @Query('search') search?: string,
-    @Query('open') open?: string,
+    @Query() query: ListOpportunitiesDto,
   ) {
-    return this.opportunitiesService.findAll(companyId, {
-      stage,
-      search,
-      open: open === 'true',
-    });
+    return this.opportunitiesService.findAll(companyId, query);
   }
 
   @Get('pipeline')

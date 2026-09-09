@@ -4,10 +4,10 @@ import { api, errorMessage } from '../../lib/api';
 import { useWrite } from '../../lib/hooks';
 import { count } from '../../lib/format';
 import { P } from '../../lib/permissions';
-import type { CompanyDetail } from '../../lib/types';
+import { CURRENCIES, type CompanyDetail } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Field';
+import { Input, Select } from '../../components/ui/Field';
 import {
   Card,
   CardHeader,
@@ -16,9 +16,23 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 
+const EMPTY_FORM = {
+  name: '',
+  address: '',
+  zipCode: '',
+  city: '',
+  country: '',
+  email: '',
+  phone: '',
+  vatNumber: '',
+  paymentTermsDays: '30',
+  currency: 'EUR',
+  allowNegativeStock: false,
+};
+
 export function CompanyPage() {
   const { can, refresh } = useAuth();
-  const [name, setName] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const company = useQuery({
     queryKey: ['company', 'current'],
@@ -26,17 +40,49 @@ export function CompanyPage() {
   });
 
   useEffect(() => {
-    if (company.data) setName(company.data.name);
+    const data = company.data;
+    if (!data) return;
+    setForm({
+      name: data.name,
+      address: data.address ?? '',
+      zipCode: data.zipCode ?? '',
+      city: data.city ?? '',
+      country: data.country ?? '',
+      email: data.email ?? '',
+      phone: data.phone ?? '',
+      vatNumber: data.vatNumber ?? '',
+      paymentTermsDays: String(data.paymentTermsDays ?? 30),
+      currency: data.currency ?? 'EUR',
+      allowNegativeStock: data.allowNegativeStock ?? false,
+    });
   }, [company.data]);
 
-  const save = useWrite<{ name: string }>(
+  const save = useWrite<Record<string, unknown>>(
     async (body) => (await api.patch('/companies/current', body)).data,
     { invalidate: [['company']], success: 'Société mise à jour' },
   );
 
+  const update = (key: keyof typeof EMPTY_FORM) => (event: { target: { value: string } }) =>
+    setForm((current) => ({ ...current, [key]: event.target.value }));
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    save.mutate({ name }, { onSuccess: () => void refresh() });
+    save.mutate(
+      {
+        name: form.name,
+        address: form.address || undefined,
+        zipCode: form.zipCode || undefined,
+        city: form.city || undefined,
+        country: form.country || undefined,
+        email: form.email || undefined,
+        phone: form.phone || undefined,
+        vatNumber: form.vatNumber || undefined,
+        paymentTermsDays: Number(form.paymentTermsDays) || 0,
+        currency: form.currency,
+        allowNegativeStock: form.allowNegativeStock,
+      },
+      { onSuccess: () => void refresh() },
+    );
   };
 
   const counters = company.data?._count;
@@ -59,30 +105,95 @@ export function CompanyPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader title="Identité" />
-            <form onSubmit={submit} className="flex flex-col gap-3.5 p-4">
-              <Input
-                label="Nom de la société"
-                required
-                value={name}
-                disabled={!can(P.companyUpdate)}
-                onChange={(event) => setName(event.target.value)}
-              />
-              <Input
-                label="Code société"
-                value={company.data?.code ?? ''}
-                readOnly
-                disabled
-                hint="Ce code permet à un collègue de rejoindre votre espace à l'inscription."
-              />
+            <CardHeader
+              title="Identité et réglages"
+              subtitle="Ces informations figurent sur vos documents commerciaux"
+            />
+            <form onSubmit={submit} className="grid gap-3.5 p-4 sm:grid-cols-2">
+              <fieldset disabled={!can(P.companyUpdate)} className="contents">
+                <div className="sm:col-span-2">
+                  <Input
+                    label="Nom de la société"
+                    required
+                    value={form.name}
+                    onChange={update('name')}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Input label="Adresse" value={form.address} onChange={update('address')} />
+                </div>
+                <Input label="Code postal" value={form.zipCode} onChange={update('zipCode')} />
+                <Input label="Ville" value={form.city} onChange={update('city')} />
+                <Input label="Pays" value={form.country} onChange={update('country')} />
+                <Input
+                  label="N° TVA"
+                  value={form.vatNumber}
+                  onChange={update('vatNumber')}
+                />
+                <Input
+                  label="E-mail"
+                  type="email"
+                  value={form.email}
+                  onChange={update('email')}
+                />
+                <Input label="Téléphone" value={form.phone} onChange={update('phone')} />
+
+                <Input
+                  label="Délai de règlement (jours)"
+                  type="number"
+                  min="0"
+                  max="365"
+                  hint="Appliqué aux factures, sauf délai négocié avec le tiers"
+                  value={form.paymentTermsDays}
+                  onChange={update('paymentTermsDays')}
+                />
+                <Select
+                  label="Devise de tenue de comptes"
+                  value={form.currency}
+                  onChange={update('currency')}
+                >
+                  {CURRENCIES.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  label="Code société"
+                  value={company.data?.code ?? ''}
+                  readOnly
+                  disabled
+                  hint="Permet à un collègue de rejoindre votre espace"
+                />
+
+                <label className="flex items-start gap-2 text-[13px] text-ink-2 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={form.allowNegativeStock}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        allowNegativeStock: event.target.checked,
+                      }))
+                    }
+                    className="mt-0.5 size-4 accent-[var(--accent)]"
+                  />
+                  <span>
+                    Autoriser le stock négatif
+                    <span className="block text-xs text-ink-3">
+                      Sans cette option, une sortie supérieure au disponible est refusée.
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
 
               {can(P.companyUpdate) && (
                 <Button
                   type="submit"
                   variant="primary"
                   loading={save.isPending}
-                  disabled={!name || name === company.data?.name}
-                  className="self-start"
+                  disabled={!form.name}
+                  className="self-start sm:col-span-2"
                 >
                   Enregistrer
                 </Button>

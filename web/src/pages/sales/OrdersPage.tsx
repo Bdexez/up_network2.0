@@ -1,17 +1,26 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Pencil, Plus, Receipt, Trash2, Truck } from 'lucide-react';
+import {
+  Download,
+  FileText,
+  Pencil,
+  Plus,
+  Receipt,
+  Trash2,
+  Truck,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../lib/api';
-import { useList, useWrite } from '../../lib/hooks';
+import { useList, usePage, usePagination, useWrite } from '../../lib/hooks';
+import { useFileDownload } from '../../lib/download';
 import { formatDate, money } from '../../lib/format';
 import { ORDER_FLOW } from '../../lib/documents';
 import { P } from '../../lib/permissions';
 import type {
   Order,
   OrderStatus,
-  Partner,
-  Product,
+  PartnerOption,
+  ProductOption,
   Warehouse,
 } from '../../lib/types';
 import { useAuth } from '../../auth/AuthContext';
@@ -26,26 +35,40 @@ import {
   Spinner,
 } from '../../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../../components/ui/Table';
+import { Pagination } from '../../components/ui/Pagination';
 import { DocumentFormModal } from '../../components/documents/DocumentFormModal';
 import { DocumentLines } from '../../components/documents/DocumentLines';
 import { DocumentTotals } from '../../components/documents/DocumentTotals';
 import { StatusActions } from '../../components/documents/StatusActions';
 import { StatusBadge } from '../../components/documents/StatusBadge';
+import { FulfilLinesDialog } from '../../components/documents/FulfilLinesDialog';
 import { toDraftLines } from '../../components/documents/LineEditor';
+import { Attachments } from '../../components/documents/Attachments';
 
 export function OrdersPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const companyCurrency = user?.company?.currency ?? 'EUR';
   const navigate = useNavigate();
   const [status, setStatus] = useState('');
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<Order | null>(null);
-  const [shipping, setShipping] = useState<Order | null>(null);
+  const [fulfilling, setFulfilling] = useState<{
+    id: number;
+    dimension: 'shipped' | 'invoiced';
+  } | null>(null);
 
-  const orders = useList<Order>(['orders'], '/orders', status ? { status } : undefined);
-  const partners = useList<Partner>(['partners'], '/partners');
-  const products = useList<Product>(['products'], '/products');
+  const pdf = useFileDownload();
+  const pagination = usePagination();
+  const orders = usePage<Order>(['orders'], '/orders', {
+    ...pagination.params,
+    ...(status ? { status } : {}),
+  });
+  const partners = useList<PartnerOption>(['partner-options', 'customer'], '/partners/options', {
+    type: 'CUSTOMER',
+  });
+  const products = useList<ProductOption>(['product-options'], '/products/options');
 
   const detail = useQuery({
     queryKey: ['orders', 'detail', openId ?? editingId],
@@ -65,14 +88,6 @@ export function OrdersPage() {
     async ({ id, status: next }) =>
       (await api.patch(`/orders/${id}/status`, { status: next })).data,
     { invalidate: [['orders'], ['dashboard']], success: 'Statut mis à jour' },
-  );
-
-  const invoice = useWrite<number>(
-    async (id) => (await api.post(`/orders/${id}/invoice`)).data,
-    {
-      invalidate: [['orders'], ['invoices'], ['dashboard']],
-      success: 'Facture créée',
-    },
   );
 
   const remove = useWrite<number>(
@@ -97,6 +112,9 @@ export function OrdersPage() {
             date: editing.date.slice(0, 10),
             secondaryDate: editing.deliveryDate?.slice(0, 10) ?? '',
             notes: editing.notes ?? '',
+            version: editing.version,
+            currency: editing.currency,
+            exchangeRate: String(editing.exchangeRate),
             lines: toDraftLines(editing.lines),
           }
         : undefined,
@@ -112,7 +130,10 @@ export function OrdersPage() {
           <>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                pagination.reset();
+              }}
               aria-label="Filtrer par statut"
               className="h-9 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm text-ink hover:border-line-strong focus:border-accent"
             >
@@ -137,7 +158,7 @@ export function OrdersPage() {
           <Spinner />
         ) : orders.isError ? (
           <ErrorState message={errorMessage(orders.error)} onRetry={() => void orders.refetch()} />
-        ) : (orders.data?.length ?? 0) === 0 ? (
+        ) : orders.items.length === 0 ? (
           <EmptyState
             icon={<FileText size={26} />}
             title={status ? 'Aucun résultat' : 'Aucune commande'}
@@ -168,7 +189,7 @@ export function OrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {orders.data?.map((order) => (
+              {orders.items.map((order) => (
                 <Tr key={order.id} onClick={() => setOpenId(order.id)}>
                   <Td className="font-medium text-ink">
                     {order.ref}
@@ -183,10 +204,10 @@ export function OrdersPage() {
                     <StatusBadge status={order.status} flow={ORDER_FLOW} />
                   </Td>
                   <Td align="right" numeric>
-                    {money(order.totalHT, true)}
+                    {money(order.totalHT, true, order.currency)}
                   </Td>
                   <Td align="right" numeric className="font-medium text-ink">
-                    {money(order.totalTTC, true)}
+                    {money(order.totalTTC, true, order.currency)}
                   </Td>
                   <Td align="right" numeric>
                     {formatDate(order.date)}
@@ -196,28 +217,41 @@ export function OrdersPage() {
                       className="flex justify-end gap-1"
                       onClick={(event) => event.stopPropagation()}
                     >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Download size={14} />}
+                        loading={pdf.pendingId === order.id}
+                        onClick={() =>
+                          void pdf.download(
+                            `/orders/${order.id}/pdf`,
+                            `${order.ref}.pdf`,
+                            order.id,
+                          )
+                        }
+                      >
+                        PDF
+                      </Button>
                       {order.status === 'VALIDATED' && can(P.ordersUpdate) && (
                         <Button
                           size="sm"
                           variant="ghost"
                           icon={<Truck size={14} />}
-                          onClick={() => setShipping(order)}
+                          onClick={() =>
+                            setFulfilling({ id: order.id, dimension: 'shipped' })
+                          }
                         >
                           Expédier
                         </Button>
                       )}
                       {['VALIDATED', 'SHIPPED'].includes(order.status) &&
-                        order.invoices.length === 0 &&
                         can(P.invoicesCreate) && (
                           <Button
                             size="sm"
                             variant="ghost"
                             icon={<Receipt size={14} />}
-                            loading={invoice.isPending && invoice.variables === order.id}
                             onClick={() =>
-                              invoice.mutate(order.id, {
-                                onSuccess: () => navigate('/factures'),
-                              })
+                              setFulfilling({ id: order.id, dimension: 'invoiced' })
                             }
                           >
                             Facturer
@@ -248,6 +282,15 @@ export function OrdersPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={orders.page}
+          totalPages={orders.totalPages}
+          total={orders.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="commandes"
+        />
       </Card>
 
       <DocumentFormModal
@@ -255,8 +298,9 @@ export function OrdersPage() {
         title={editing ? `Modifier la commande ${editing.ref}` : 'Nouvelle commande'}
         partnerLabel="Client"
         secondaryDateLabel="Livraison prévue"
-        partners={(partners.data ?? []).filter((p) => p.isActive && p.type !== 'SUPPLIER')}
+        partners={partners.data ?? []}
         products={products.data ?? []}
+        companyCurrency={companyCurrency}
         loading={save.isPending}
         initial={initialValues}
         onClose={closeForm}
@@ -270,6 +314,9 @@ export function OrdersPage() {
                 deliveryDate: payload.secondaryDate,
                 notes: payload.notes,
                 lines: payload.lines,
+                version: payload.version,
+                currency: payload.currency,
+                exchangeRate: payload.exchangeRate,
               },
             },
             { onSuccess: closeForm },
@@ -321,8 +368,11 @@ export function OrdersPage() {
                 totalVat={detail.data.totalVat}
                 totalTTC={detail.data.totalTTC}
                 vatBreakdown={detail.data.vatBreakdown}
+                currency={detail.data.currency}
               />
             </div>
+
+            <Attachments entity="ORDER" entityId={detail.data.id} />
 
             {detail.data.invoices.length > 0 && (
               <p className="text-[13px] text-ink-3">
@@ -338,7 +388,11 @@ export function OrdersPage() {
         )}
       </Modal>
 
-      <ShipDialog order={shipping} onClose={() => setShipping(null)} />
+      <FulfilDialog
+        target={fulfilling}
+        onClose={() => setFulfilling(null)}
+        onInvoiced={() => navigate('/factures')}
+      />
 
       <ConfirmDialog
         open={deleting !== null}
@@ -354,65 +408,117 @@ export function OrdersPage() {
   );
 }
 
-/** L'expédition demande l'entrepôt à décrémenter avant de sortir le stock. */
-function ShipDialog({ order, onClose }: { order: Order | null; onClose: () => void }) {
+
+/**
+ * Expédition ou facturation, totale ou partielle. Les deux gestes partagent
+ * la même mécanique : choisir des quantités sur les lignes restantes.
+ */
+function FulfilDialog({
+  target,
+  onClose,
+  onInvoiced,
+}: {
+  target: { id: number; dimension: 'shipped' | 'invoiced' } | null;
+  onClose: () => void;
+  onInvoiced: () => void;
+}) {
   const warehouses = useList<Warehouse>(['warehouses'], '/stock/warehouses');
   const [warehouseId, setWarehouseId] = useState('');
 
-  const ship = useWrite<{ id: number; warehouseId?: number }>(
-    async ({ id, warehouseId: warehouse }) =>
-      (await api.post(`/orders/${id}/ship`, warehouse ? { warehouseId: warehouse } : {})).data,
+  const detail = useQuery({
+    queryKey: ['orders', 'detail', target?.id],
+    queryFn: async () => (await api.get<Order>(`/orders/${target!.id}`)).data,
+    enabled: target !== null,
+  });
+
+  const ship = useWrite<{
+    id: number;
+    warehouseId?: number;
+    lines: { lineId: number; quantity: number }[];
+  }>(
+    async ({ id, warehouseId: warehouse, lines }) =>
+      (
+        await api.post(`/orders/${id}/ship`, {
+          ...(warehouse ? { warehouseId: warehouse } : {}),
+          lines,
+        })
+      ).data,
     {
       invalidate: [['orders'], ['stock'], ['dashboard']],
-      success: 'Commande expédiée, stock mis à jour',
+      success: 'Expédition enregistrée, stock mis à jour',
     },
   );
 
+  const invoice = useWrite<{
+    id: number;
+    lines: { lineId: number; quantity: number }[];
+  }>(
+    async ({ id, lines }) => (await api.post(`/orders/${id}/invoice`, { lines })).data,
+    { invalidate: [['orders'], ['invoices'], ['dashboard']], success: 'Facture créée' },
+  );
+
+  if (!target) return null;
+
+  const shipping = target.dimension === 'shipped';
+
   return (
-    <Modal
-      open={order !== null}
-      onClose={onClose}
-      title="Expédier la commande"
+    <FulfilLinesDialog
+      open
+      title={shipping ? 'Expédier la commande' : 'Facturer la commande'}
       description={
-        order
-          ? `${order.ref} — les quantités des produits suivis sortiront du stock.`
+        detail.data
+          ? shipping
+            ? `${detail.data.ref} — les produits suivis sortiront du stock.`
+            : `${detail.data.ref} — ajustez les quantités pour une facturation partielle.`
           : undefined
       }
-      width="sm"
-      footer={
-        <>
-          <Button onClick={onClose}>Annuler</Button>
-          <Button
-            variant="primary"
-            loading={ship.isPending}
-            onClick={() =>
-              order &&
-              ship.mutate(
-                { id: order.id, warehouseId: warehouseId ? Number(warehouseId) : undefined },
-                { onSuccess: onClose },
-              )
-            }
+      lines={detail.data?.lines ?? []}
+      dimension={target.dimension}
+      currency={detail.data?.currency ?? 'EUR'}
+      loading={ship.isPending || invoice.isPending}
+      confirmLabel={shipping ? 'Expédier' : 'Facturer'}
+      extraFields={
+        shipping ? (
+          <Select
+            label="Entrepôt"
+            hint="À défaut, l'entrepôt par défaut de la société."
+            value={warehouseId}
+            onChange={(event) => setWarehouseId(event.target.value)}
           >
-            Expédier
-          </Button>
-        </>
+            <option value="">Entrepôt par défaut</option>
+            {warehouses.data
+              ?.filter((warehouse) => warehouse.isActive)
+              .map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
+          </Select>
+        ) : undefined
       }
-    >
-      <Select
-        label="Entrepôt"
-        hint="À défaut, l'entrepôt par défaut de la société est utilisé."
-        value={warehouseId}
-        onChange={(event) => setWarehouseId(event.target.value)}
-      >
-        <option value="">Entrepôt par défaut</option>
-        {warehouses.data
-          ?.filter((warehouse) => warehouse.isActive)
-          .map((warehouse) => (
-            <option key={warehouse.id} value={warehouse.id}>
-              {warehouse.name}
-            </option>
-          ))}
-      </Select>
-    </Modal>
+      onClose={onClose}
+      onConfirm={(lines) => {
+        if (shipping) {
+          ship.mutate(
+            {
+              id: target.id,
+              warehouseId: warehouseId ? Number(warehouseId) : undefined,
+              lines,
+            },
+            { onSuccess: onClose },
+          );
+        } else {
+          invoice.mutate(
+            { id: target.id, lines },
+            {
+              onSuccess: () => {
+                onClose();
+                onInvoiced();
+              },
+            },
+          );
+        }
+      }}
+    />
   );
 }

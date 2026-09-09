@@ -49,9 +49,7 @@ export class PermissionsGuard implements CanActivate {
     });
 
     if (!userCompany) {
-      throw new ForbiddenException(
-        "Vous n'appartenez pas à cette société",
-      );
+      throw new ForbiddenException("Vous n'appartenez pas à cette société");
     }
 
     if (!userCompany.role) {

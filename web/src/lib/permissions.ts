@@ -72,6 +72,39 @@ export const P = {
   rolesUpdate: 'system.roles.update',
   rolesDelete: 'system.roles.delete',
 
+  projectsRead: 'projects.projects.read',
+  projectsCreate: 'projects.projects.create',
+  projectsUpdate: 'projects.projects.update',
+  projectsDelete: 'projects.projects.delete',
+  tasksCreate: 'projects.tasks.create',
+  tasksUpdate: 'projects.tasks.update',
+  tasksDelete: 'projects.tasks.delete',
+  timeCreate: 'projects.time.create',
+  timeDelete: 'projects.time.delete',
+
+  employeesRead: 'hr.employees.read',
+  employeesCreate: 'hr.employees.create',
+  employeesUpdate: 'hr.employees.update',
+  employeesDelete: 'hr.employees.delete',
+
+  leaveRead: 'hr.leave.read',
+  leaveCreate: 'hr.leave.create',
+  leaveApprove: 'hr.leave.approve',
+  leaveDelete: 'hr.leave.delete',
+
+  expensesRead: 'hr.expenses.read',
+  expensesCreate: 'hr.expenses.create',
+  expensesUpdate: 'hr.expenses.update',
+  expensesApprove: 'hr.expenses.approve',
+  expensesDelete: 'hr.expenses.delete',
+
+  attachmentsRead: 'documents.attachments.read',
+  attachmentsCreate: 'documents.attachments.create',
+  attachmentsDelete: 'documents.attachments.delete',
+
+  reportsRead: 'reports.accounting.read',
+  reportsExport: 'reports.accounting.export',
+
   companyRead: 'system.companies.read',
   companyUpdate: 'system.companies.update',
 } as const;

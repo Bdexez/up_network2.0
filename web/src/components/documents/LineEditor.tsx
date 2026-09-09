@@ -1,6 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { money } from '../../lib/format';
-import type { Product } from '../../lib/types';
+import type { ProductOption } from '../../lib/types';
 import { Button } from '../ui/Button';
 import { DocumentTotals } from './DocumentTotals';
 
@@ -36,7 +36,7 @@ export function LineEditor({
   useCostPrice = false,
 }: {
   lines: DraftLine[];
-  products: Product[];
+  products: ProductOption[];
   onChange: (lines: DraftLine[]) => void;
   useCostPrice?: boolean;
 }) {

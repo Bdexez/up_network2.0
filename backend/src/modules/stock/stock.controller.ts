@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -21,7 +22,13 @@ import { StockService } from './stock.service';
 import { WarehousesService } from './warehouses.service';
 import { CreateWarehouseDto, UpdateWarehouseDto } from './dto/warehouse.dto';
 import { AdjustStockDto, TransferStockDto } from './dto/adjust-stock.dto';
+import {
+  ListStockLevelsDto,
+  ListStockMovementsDto,
+} from './dto/list-stock.dto';
 
+@ApiTags('stock')
+@ApiBearerAuth()
 @Controller('stock')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class StockController {
@@ -34,32 +41,17 @@ export class StockController {
 
   @Get('levels')
   @RequirePermission('stock', 'stock', 'read')
-  levels(
-    @CompanyId() companyId: number,
-    @Query('warehouseId') warehouseId?: string,
-    @Query('search') search?: string,
-    @Query('belowAlert') belowAlert?: string,
-  ) {
-    return this.stockService.levels(companyId, {
-      warehouseId: warehouseId ? Number(warehouseId) : undefined,
-      search,
-      belowAlert: belowAlert === 'true',
-    });
+  levels(@CompanyId() companyId: number, @Query() query: ListStockLevelsDto) {
+    return this.stockService.levels(companyId, query);
   }
 
   @Get('movements')
   @RequirePermission('stock', 'stock', 'read')
   movements(
     @CompanyId() companyId: number,
-    @Query('productId') productId?: string,
-    @Query('warehouseId') warehouseId?: string,
-    @Query('limit') limit?: string,
+    @Query() query: ListStockMovementsDto,
   ) {
-    return this.stockService.movements(companyId, {
-      productId: productId ? Number(productId) : undefined,
-      warehouseId: warehouseId ? Number(warehouseId) : undefined,
-      limit: limit ? Number(limit) : undefined,
-    });
+    return this.stockService.movements(companyId, query);
   }
 
   @Post('adjust')
@@ -92,7 +84,10 @@ export class StockController {
 
   @Post('warehouses')
   @RequirePermission('stock', 'warehouses', 'create')
-  createWarehouse(@CompanyId() companyId: number, @Body() dto: CreateWarehouseDto) {
+  createWarehouse(
+    @CompanyId() companyId: number,
+    @Body() dto: CreateWarehouseDto,
+  ) {
     return this.warehousesService.create(companyId, dto);
   }
 

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  Min,
   IsArray,
   IsDateString,
   IsInt,
@@ -34,4 +35,12 @@ export class UpdateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => DocumentLineDto)
   lines?: DocumentLineDto[];
+  /**
+   * Version lue par le client. Fournie, elle protège d'un écrasement
+   * concurrent ; omise, la modification est appliquée sans contrôle.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  version?: number;
 }

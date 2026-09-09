@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { LeadStatus } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -22,7 +22,10 @@ import { LeadsService } from './leads.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
+import { ListLeadsDto } from './dto/list-leads.dto';
 
+@ApiTags('crm')
+@ApiBearerAuth()
 @Controller('crm/leads')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class LeadsController {
@@ -40,12 +43,8 @@ export class LeadsController {
 
   @Get()
   @RequirePermission('crm', 'leads', 'read')
-  findAll(
-    @CompanyId() companyId: number,
-    @Query('status') status?: LeadStatus,
-    @Query('search') search?: string,
-  ) {
-    return this.leadsService.findAll(companyId, { status, search });
+  findAll(@CompanyId() companyId: number, @Query() query: ListLeadsDto) {
+    return this.leadsService.findAll(companyId, query);
   }
 
   @Get('stats')

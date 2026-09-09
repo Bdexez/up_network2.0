@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ActivityStatus, ActivityType, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { paginate, type PageParams } from 'src/common/pagination/paginate';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 
@@ -57,7 +58,7 @@ export class ActivitiesService {
       opportunityId?: number;
       partnerId?: number;
       upcoming?: boolean;
-    },
+    } & PageParams,
   ) {
     const where: Prisma.ActivityWhereInput = { companyId };
 
@@ -72,11 +73,22 @@ export class ActivitiesService {
       where.dueDate = { not: null };
     }
 
-    return this.prisma.activity.findMany({
-      where,
-      include: ACTIVITY_INCLUDE,
-      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
-    });
+    return paginate(filters, (skip, take) =>
+      this.prisma.$transaction([
+        this.prisma.activity.findMany({
+          where,
+          include: ACTIVITY_INCLUDE,
+          orderBy: [
+            { status: 'asc' },
+            { dueDate: 'asc' },
+            { createdAt: 'desc' },
+          ],
+          skip,
+          take,
+        }),
+        this.prisma.activity.count({ where }),
+      ]),
+    );
   }
 
   async findOne(companyId: number, id: number) {

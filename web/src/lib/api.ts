@@ -1,27 +1,44 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 const TOKEN_KEY = 'upnet.token';
+const REFRESH_KEY = 'upnet.refresh';
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3000',
   headers: { 'Content-Type': 'application/json' },
 });
 
-export function getToken(): string | null {
+/** Client sans intercepteur : sert à rafraîchir sans boucler sur soi-même. */
+const bare = axios.create({ baseURL: api.defaults.baseURL });
+
+function read(key: string): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-export function setToken(token: string | null) {
+function write(key: string, value: string | null) {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
   } catch {
     /* navigation privée : la session reste en mémoire */
   }
+}
+
+export const getToken = () => read(TOKEN_KEY);
+export const getRefreshToken = () => read(REFRESH_KEY);
+
+export function setSession(accessToken: string | null, refreshToken?: string | null) {
+  write(TOKEN_KEY, accessToken);
+  if (refreshToken !== undefined) write(REFRESH_KEY, refreshToken);
+}
+
+export function clearSession() {
+  write(TOKEN_KEY, null);
+  write(REFRESH_KEY, null);
 }
 
 api.interceptors.request.use((config) => {
@@ -30,19 +47,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-/** Diffusé quand l'API renvoie 401 : l'AuthProvider déconnecte alors la session. */
+/** Diffusé quand la session est définitivement perdue. */
 export const UNAUTHORIZED_EVENT = 'upnet:unauthorized';
+
+/**
+ * Un seul rafraîchissement à la fois : si trois requêtes échouent ensemble,
+ * elles attendent le même échange plutôt que d'en déclencher trois — la
+ * rotation invaliderait alors les deux autres et fermerait la session.
+ */
+let refreshing: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  try {
+    const { data } = await bare.post<{ accessToken: string; refreshToken: string }>(
+      '/auth/refresh',
+      { refreshToken },
+    );
+    setSession(data.accessToken, data.refreshToken);
+    return data.accessToken;
+  } catch {
+    clearSession();
+    return null;
+  }
+}
 
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     const status = error.response?.status;
-    const url = error.config?.url ?? '';
-    // On ne déconnecte pas sur l'écran de login : l'erreur y est affichée telle quelle.
-    if (status === 401 && !url.includes('/auth/login')) {
-      setToken(null);
+    const config = error.config as
+      | (InternalAxiosRequestConfig & { _retried?: boolean })
+      | undefined;
+    const url = config?.url ?? '';
+
+    // Sur l'écran de connexion, l'erreur s'affiche telle quelle.
+    const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/refresh');
+
+    if (status === 401 && config && !config._retried && !isAuthRoute) {
+      config._retried = true;
+
+      refreshing ??= refreshAccessToken().finally(() => {
+        refreshing = null;
+      });
+      const token = await refreshing;
+
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        return api.request(config);
+      }
+
+      clearSession();
       window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
     }
+
     return Promise.reject(error);
   },
 );

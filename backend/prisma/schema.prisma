@@ -29,6 +29,18 @@ model Company {
   /// Taux de TVA proposé par défaut sur les nouveaux produits.
   defaultVatRate Float @default(20)
 
+  /// Autorise une sortie de stock supérieure au disponible. Faux par défaut :
+  /// un stock négatif est presque toujours une erreur de saisie.
+  allowNegativeStock Boolean @default(false)
+
+  /// Délai de règlement appliqué aux factures, en jours.
+  paymentTermsDays Int @default(30)
+
+  /// Devise de tenue de comptes. Les documents peuvent être libellés dans une
+  /// autre devise ; leurs montants sont alors aussi convertis dans celle-ci
+  /// pour que les états consolidés restent additionnables.
+  currency String @default("EUR")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -43,6 +55,10 @@ model Company {
   warehouses     Warehouse[]
   stockMovements StockMovement[]
   counters       DocumentCounter[]
+  attachments    Attachment[]
+  projects       Project[]
+  employees      Employee[]
+  expenseReports ExpenseReport[]
   leads          Lead[]
   opportunities  Opportunity[]
   activities     Activity[]
@@ -61,6 +77,14 @@ model User {
   updatedAt    DateTime @updatedAt
 
   userCompanies      UserCompany[]
+  refreshTokens      RefreshToken[]
+  attachments        Attachment[]
+  employeeRecords    Employee[]      @relation("EmployeeAccount")
+  leaveDecisions     LeaveRequest[]  @relation("LeaveDecider")
+  expenseDecisions   ExpenseReport[] @relation("ExpenseDecider")
+  ownedProjects      Project[]       @relation("ProjectOwner")
+  assignedTasks      Task[]          @relation("TaskAssignee")
+  timeEntries        TimeEntry[]
   quotes             Quote[]
   orders             Order[]
   invoices           Invoice[]
@@ -70,6 +94,63 @@ model User {
   ownedLeads         Lead[]          @relation("LeadOwner")
   ownedOpportunities Opportunity[]   @relation("OpportunityOwner")
   ownedActivities    Activity[]      @relation("ActivityOwner")
+}
+
+/// Jeton de rafraîchissement, stocké haché : une fuite de la base ne permet
+/// pas de rejouer les sessions.
+model RefreshToken {
+  id           String    @id @default(uuid())
+  tokenHash    String    @unique
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Société active au moment de l'émission, pour rendre un jeton équivalent.
+  companyId    Int
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  /// Rotation : le jeton qui a remplacé celui-ci. Permet de détecter le rejeu
+  /// d'un jeton déjà échangé, signe d'un vol.
+  replacedById String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Objets auxquels une pièce jointe peut se rattacher.
+enum AttachmentEntity {
+  PARTNER
+  QUOTE
+  ORDER
+  INVOICE
+  PURCHASE_ORDER
+  PRODUCT
+  PROJECT
+}
+
+/// Document rattaché à une fiche : bon de livraison signé, contrat, photo…
+/// Le fichier vit sur disque ; la base ne garde que sa description.
+model Attachment {
+  id       Int              @id @default(autoincrement())
+  entity   AttachmentEntity
+  entityId Int
+
+  fileName    String
+  mimeType    String
+  size        Int
+  /// Chemin relatif au dossier de stockage, cloisonné par société.
+  storagePath String
+  description String?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  uploadedById Int
+  uploadedBy   User @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId, entity, entityId])
 }
 
 model Role {
@@ -133,6 +214,7 @@ enum DocumentType {
   QUOTE
   ORDER
   INVOICE
+  CREDIT_NOTE
   PURCHASE_ORDER
 }
 
@@ -173,10 +255,13 @@ model Partner {
   website   String?
   vatNumber String?
   isActive  Boolean     @default(true)
-  companyId Int
-  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+
+  /// Délai de règlement négocié ; à défaut, celui de la société s'applique.
+  paymentTermsDays Int?
+  companyId        Int
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   contacts       Contact[]
   quotes         Quote[]
@@ -186,6 +271,7 @@ model Partner {
   opportunities  Opportunity[]
   activities     Activity[]
   leads          Lead[]
+  projects       Project[]
 
   @@index([companyId])
 }
@@ -276,6 +362,14 @@ model Quote {
   totalVat Float @default(0)
   totalTTC Float @default(0)
 
+  /// Devise du document. Les totaux ci-dessus y sont exprimés.
+  currency     String @default("EUR")
+  /// Taux de conversion vers la devise de la société, figé à l'émission.
+  exchangeRate Float  @default(1)
+  /// Totaux convertis dans la devise société, pour les états consolidés.
+  baseTotalHT  Float  @default(0)
+  baseTotalTTC Float  @default(0)
+
   companyId   Int
   company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   partnerId   Int
@@ -285,6 +379,10 @@ model Quote {
 
   lines  QuoteLine[]
   orders Order[]
+
+  /// Verrou optimiste : incrémenté à chaque écriture. Une modification qui
+  /// s'appuie sur une version périmée est refusée plutôt qu'écrasée.
+  version Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -338,6 +436,14 @@ model Order {
   totalVat Float @default(0)
   totalTTC Float @default(0)
 
+  /// Devise du document. Les totaux ci-dessus y sont exprimés.
+  currency     String @default("EUR")
+  /// Taux de conversion vers la devise de la société, figé à l'émission.
+  exchangeRate Float  @default(1)
+  /// Totaux convertis dans la devise société, pour les états consolidés.
+  baseTotalHT  Float  @default(0)
+  baseTotalTTC Float  @default(0)
+
   companyId   Int
   company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   partnerId   Int
@@ -352,6 +458,10 @@ model Order {
   lines    OrderLine[]
   invoices Invoice[]
 
+  /// Verrou optimiste : incrémenté à chaque écriture. Une modification qui
+  /// s'appuie sur une version périmée est refusée plutôt qu'écrasée.
+  version Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -364,6 +474,11 @@ model OrderLine {
   orderId  Int
   order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   position Int   @default(0)
+
+  /// Quantités déjà traitées : permettent les expéditions et facturations
+  /// partielles sans document de livraison séparé.
+  shippedQuantity  Float @default(0)
+  invoicedQuantity Float @default(0)
 
   productId Int?
   product   Product? @relation(fields: [productId], references: [id])
@@ -389,9 +504,17 @@ enum InvoiceStatus {
   CANCELLED
 }
 
+enum InvoiceType {
+  /// Facture de vente ordinaire.
+  INVOICE
+  /// Avoir : corrige une facture émise, sans jamais la réécrire.
+  CREDIT_NOTE
+}
+
 model Invoice {
   id     Int           @id @default(autoincrement())
   ref    String
+  type   InvoiceType   @default(INVOICE)
   status InvoiceStatus @default(DRAFT)
 
   date    DateTime  @default(now())
@@ -403,6 +526,21 @@ model Invoice {
   totalTTC   Float @default(0)
   /// Somme des paiements encaissés ; maintenue par PaymentsService.
   paidAmount Float @default(0)
+
+  /// Suivi des relances d'impayé : niveau atteint et date du dernier envoi.
+  reminderCount  Int       @default(0)
+  lastReminderAt DateTime?
+
+  /// Date du dernier envoi au client, tous canaux confondus.
+  sentAt DateTime?
+
+  /// Devise du document. Les totaux ci-dessus y sont exprimés.
+  currency     String @default("EUR")
+  /// Taux de conversion vers la devise de la société, figé à l'émission.
+  exchangeRate Float  @default(1)
+  /// Totaux convertis dans la devise société, pour les états consolidés.
+  baseTotalHT  Float  @default(0)
+  baseTotalTTC Float  @default(0)
 
   pdfUrl String?
 
@@ -417,8 +555,17 @@ model Invoice {
   orderId Int?
   order   Order? @relation(fields: [orderId], references: [id])
 
+  /// Pour un avoir : la facture qu'il corrige.
+  creditedInvoiceId Int?
+  creditedInvoice   Invoice?  @relation("InvoiceCredits", fields: [creditedInvoiceId], references: [id])
+  creditNotes       Invoice[] @relation("InvoiceCredits")
+
   lines    InvoiceLine[]
   payments Payment[]
+
+  /// Verrou optimiste : incrémenté à chaque écriture. Une modification qui
+  /// s'appuie sur une version périmée est refusée plutôt qu'écrasée.
+  version Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -502,6 +649,14 @@ model PurchaseOrder {
   totalVat Float @default(0)
   totalTTC Float @default(0)
 
+  /// Devise du document. Les totaux ci-dessus y sont exprimés.
+  currency     String @default("EUR")
+  /// Taux de conversion vers la devise de la société, figé à l'émission.
+  exchangeRate Float  @default(1)
+  /// Totaux convertis dans la devise société, pour les états consolidés.
+  baseTotalHT  Float  @default(0)
+  baseTotalTTC Float  @default(0)
+
   companyId   Int
   company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   supplierId  Int
@@ -514,6 +669,10 @@ model PurchaseOrder {
   warehouse   Warehouse? @relation(fields: [warehouseId], references: [id])
 
   lines PurchaseOrderLine[]
+
+  /// Verrou optimiste : incrémenté à chaque écriture. Une modification qui
+  /// s'appuie sur une version périmée est refusée plutôt qu'écrasée.
+  version Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -617,6 +776,256 @@ model StockMovement {
 
   @@index([companyId, createdAt])
   @@index([productId])
+}
+
+// ---------------------------------------------------------------------------
+// Ressources humaines : employés, congés, notes de frais
+// ---------------------------------------------------------------------------
+
+model Employee {
+  id         Int     @id @default(autoincrement())
+  firstName  String
+  lastName   String
+  email      String?
+  phone      String?
+  position   String?
+  /// Service ou département, en texte libre : une table dédiée serait
+  /// disproportionnée pour une PME.
+  department String?
+
+  hireDate DateTime?
+  endDate  DateTime?
+  isActive Boolean   @default(true)
+
+  /// Solde de congés payés, en jours. Décrémenté à l'approbation.
+  paidLeaveBalance Float @default(25)
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// Compte applicatif associé, si l'employé se connecte à l'ERP.
+  userId Int?
+  user   User? @relation("EmployeeAccount", fields: [userId], references: [id])
+
+  leaveRequests  LeaveRequest[]
+  expenseReports ExpenseReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Un compte ne peut tenir qu'une fiche par société — mais la même personne
+  /// peut être salariée de deux sociétés du même ERP.
+  @@unique([companyId, userId])
+  @@index([companyId, isActive])
+}
+
+enum LeaveType {
+  PAID
+  RTT
+  SICK
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id     Int         @id @default(autoincrement())
+  type   LeaveType   @default(PAID)
+  status LeaveStatus @default(PENDING)
+
+  startDate DateTime
+  endDate   DateTime
+  /// Nombre de jours ouvrés décomptés, calculé à la création.
+  days      Float
+  reason    String?
+
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  decidedById  Int?
+  decidedBy    User?     @relation("LeaveDecider", fields: [decidedById], references: [id])
+  decidedAt    DateTime?
+  decisionNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, status])
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REFUSED
+  REIMBURSED
+}
+
+model ExpenseReport {
+  id     Int           @id @default(autoincrement())
+  ref    String
+  status ExpenseStatus @default(DRAFT)
+
+  /// Mois concerné, au premier jour du mois.
+  period DateTime
+  notes  String?
+
+  totalHT  Float @default(0)
+  totalVat Float @default(0)
+  totalTTC Float @default(0)
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  decidedById Int?
+  decidedBy   User?     @relation("ExpenseDecider", fields: [decidedById], references: [id])
+  decidedAt   DateTime?
+
+  lines ExpenseLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, ref])
+  @@index([companyId, status])
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  MEAL
+  ACCOMMODATION
+  SUPPLIES
+  MILEAGE
+  OTHER
+}
+
+model ExpenseLine {
+  id       Int             @id @default(autoincrement())
+  category ExpenseCategory @default(OTHER)
+
+  date        DateTime
+  description String
+  amountHT    Float
+  vatRate     Float    @default(20)
+  amountVat   Float    @default(0)
+  amountTTC   Float    @default(0)
+
+  reportId Int
+  report   ExpenseReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}
+
+// ---------------------------------------------------------------------------
+// Projets, tâches et temps passé
+// ---------------------------------------------------------------------------
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  CLOSED
+}
+
+model Project {
+  id     Int           @id @default(autoincrement())
+  ref    String
+  name   String
+  status ProjectStatus @default(DRAFT)
+
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+
+  /// Budget en heures ; 0 signifie « non suivi ».
+  budgetHours Float @default(0)
+  /// Tarif horaire facturé, repris sur les temps facturables.
+  hourlyRate  Float @default(0)
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// Client du projet, s'il est réalisé pour un tiers.
+  partnerId Int?
+  partner   Partner? @relation(fields: [partnerId], references: [id])
+
+  ownerId Int?
+  owner   User? @relation("ProjectOwner", fields: [ownerId], references: [id])
+
+  tasks       Task[]
+  timeEntries TimeEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, ref])
+  @@index([companyId, status])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+model Task {
+  id     Int        @id @default(autoincrement())
+  name   String
+  status TaskStatus @default(TODO)
+
+  description    String?
+  dueDate        DateTime?
+  estimatedHours Float     @default(0)
+  position       Int       @default(0)
+
+  projectId Int
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  assigneeId Int?
+  assignee   User? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  timeEntries TimeEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, status])
+}
+
+/// Temps passé, saisi par un utilisateur sur un projet ou une de ses tâches.
+model TimeEntry {
+  id            Int      @id @default(autoincrement())
+  date          DateTime @default(now())
+  hours         Float
+  description   String?
+  /// Refacturable au client. Les temps internes ne le sont pas.
+  billable      Boolean  @default(true)
+  /// Heures déjà reprises sur une facture : évite de facturer deux fois.
+  invoicedHours Float    @default(0)
+
+  projectId Int
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  taskId Int?
+  task   Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, date])
+  @@index([userId, date])
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Package, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
-import { useDebounced, useList, useWrite } from '../lib/hooks';
+import { useDebounced, usePage, usePagination, useWrite } from '../lib/hooks';
 import { formatDate, money } from '../lib/format';
 import { PRODUCT_TYPE_LABEL } from '../lib/documents';
 import { P } from '../lib/permissions';
@@ -20,6 +20,7 @@ import {
   Spinner,
 } from '../components/ui/Surface';
 import { Td, TableWrap, Th, Tr } from '../components/ui/Table';
+import { Pagination } from '../components/ui/Pagination';
 import { errorMessage } from '../lib/api';
 
 const EMPTY = {
@@ -42,11 +43,11 @@ export function ProductsPage() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Product | null>(null);
 
-  const products = useList<Product>(
-    ['products'],
-    '/products',
-    debouncedSearch ? { search: debouncedSearch } : undefined,
-  );
+  const pagination = usePagination();
+  const products = usePage<Product>(['products'], '/products', {
+    ...pagination.params,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  });
 
   const save = useWrite<{ id?: number; body: typeof EMPTY }>(
     async ({ id, body }) => {
@@ -84,7 +85,14 @@ export function ProductsPage() {
         description="Les produits et services facturables."
         actions={
           <>
-            <SearchInput value={search} onChange={setSearch} placeholder="Nom ou référence…" />
+            <SearchInput
+              value={search}
+              onChange={(value) => {
+                setSearch(value);
+                pagination.reset();
+              }}
+              placeholder="Nom ou référence…"
+            />
             {can(P.productsCreate) && (
               <Button variant="primary" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
                 Nouveau produit
@@ -102,7 +110,7 @@ export function ProductsPage() {
             message={errorMessage(products.error)}
             onRetry={() => void products.refetch()}
           />
-        ) : (products.data?.length ?? 0) === 0 ? (
+        ) : products.items.length === 0 ? (
           <EmptyState
             icon={<Package size={26} />}
             title={search ? 'Aucun résultat' : 'Catalogue vide'}
@@ -134,7 +142,7 @@ export function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.data?.map((product) => (
+              {products.items.map((product) => (
                 <Tr key={product.id}>
                   <Td>
                     <span className="font-medium text-ink">{product.name}</span>
@@ -193,6 +201,15 @@ export function ProductsPage() {
             </tbody>
           </TableWrap>
         )}
+
+        <Pagination
+          page={products.page}
+          totalPages={products.totalPages}
+          total={products.total}
+          perPage={pagination.perPage}
+          onChange={pagination.setPage}
+          label="produits"
+        />
       </Card>
 
       <ProductForm

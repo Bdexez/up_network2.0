@@ -8,10 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { OrderStatus } from '@prisma/client';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -22,8 +24,11 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { ChangeOrderStatusDto } from './dto/change-order-status.dto';
-import { ShipOrderDto } from './dto/ship-order.dto';
+import { InvoiceOrderDto, ShipOrderDto } from './dto/fulfil-order.dto';
+import { ListOrdersDto } from './dto/list-orders.dto';
 
+@ApiTags('sales')
+@ApiBearerAuth()
 @Controller('orders')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class OrdersController {
@@ -41,15 +46,25 @@ export class OrdersController {
 
   @Get()
   @RequirePermission('sales', 'orders', 'read')
-  findAll(
+  findAll(@CompanyId() companyId: number, @Query() query: ListOrdersDto) {
+    return this.ordersService.findAll(companyId, query);
+  }
+
+  @Get(':id/pdf')
+  @RequirePermission('sales', 'orders', 'read')
+  async downloadPdf(
     @CompanyId() companyId: number,
-    @Query('status') status?: OrderStatus,
-    @Query('partnerId') partnerId?: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
   ) {
-    return this.ordersService.findAll(companyId, {
-      status,
-      partnerId: partnerId ? Number(partnerId) : undefined,
-    });
+    const { buffer, fileName } = await this.ordersService.renderPdf(
+      companyId,
+      id,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
   }
 
   @Get(':id')
@@ -89,7 +104,7 @@ export class OrdersController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ShipOrderDto,
   ) {
-    return this.ordersService.ship(companyId, userId, id, dto.warehouseId);
+    return this.ordersService.ship(companyId, userId, id, dto);
   }
 
   @Post(':id/invoice')
@@ -98,8 +113,14 @@ export class OrdersController {
     @CompanyId() companyId: number,
     @CurrentUser('userId') userId: number,
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: InvoiceOrderDto,
   ) {
-    return this.ordersService.convertToInvoice(companyId, userId, id);
+    return this.ordersService.convertToInvoice(
+      companyId,
+      userId,
+      id,
+      dto.lines,
+    );
   }
 
   @Delete(':id')

@@ -7,9 +7,11 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PermissionsGuard } from 'src/common/guards/permissions.guard';
 import { RequirePermission } from 'src/common/decorators/permissions.decorator';
 import {
@@ -17,9 +19,12 @@ import {
   CurrentUser,
 } from 'src/common/decorators/current-user.decorator';
 import { UsersService } from './users.service';
+import { PaginationDto } from 'src/common/pagination/pagination.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
+@ApiTags('system')
+@ApiBearerAuth()
 @Controller('users')
 @UseGuards(AuthGuard('jwt'), PermissionsGuard)
 export class UsersController {
@@ -33,8 +38,8 @@ export class UsersController {
 
   @Get()
   @RequirePermission('system', 'users', 'read')
-  findAll(@CompanyId() companyId: number) {
-    return this.usersService.findAll(companyId);
+  findAll(@CompanyId() companyId: number, @Query() query: PaginationDto) {
+    return this.usersService.findAll(companyId, query);
   }
 
   @Get(':id')

@@ -2,16 +2,21 @@ import {
   Boxes,
   Building2,
   CalendarCheck,
+  CalendarDays,
   Contact,
   FileSignature,
   FileText,
+  FolderKanban,
   Gauge,
   KanbanSquare,
   Package,
   Receipt,
+  ReceiptText,
+  Scale,
   Shield,
   ShoppingCart,
   Target,
+  UserRound,
   Users,
   Warehouse,
   type LucideIcon,
@@ -72,6 +77,31 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/produits', label: 'Catalogue', icon: Package, permission: P.productsRead },
       { to: '/stock', label: 'Stock', icon: Boxes, permission: P.stockRead },
       { to: '/entrepots', label: 'Entrepôts', icon: Warehouse, permission: P.warehousesRead },
+    ],
+  },
+  {
+    title: 'Projets',
+    items: [
+      { to: '/projets', label: 'Projets', icon: FolderKanban, permission: P.projectsRead },
+    ],
+  },
+  {
+    title: 'Ressources humaines',
+    items: [
+      { to: '/rh/employes', label: 'Employés', icon: UserRound, permission: P.employeesRead },
+      { to: '/rh/conges', label: 'Congés', icon: CalendarDays, permission: P.leaveRead },
+      {
+        to: '/rh/notes-de-frais',
+        label: 'Notes de frais',
+        icon: ReceiptText,
+        permission: P.expensesRead,
+      },
+    ],
+  },
+  {
+    title: 'Comptabilité',
+    items: [
+      { to: '/etats', label: 'États comptables', icon: Scale, permission: P.reportsRead },
     ],
   },
   {

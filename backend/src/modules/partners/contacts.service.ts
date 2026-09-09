@@ -67,7 +67,11 @@ export class ContactsService {
     if (!partner) throw new NotFoundException('Client introuvable');
   }
 
-  private async assertContact(companyId: number, partnerId: number, id: number) {
+  private async assertContact(
+    companyId: number,
+    partnerId: number,
+    id: number,
+  ) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, partnerId, partner: { companyId } },
       select: { id: true },
