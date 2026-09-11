@@ -1,23 +1,37 @@
+// Charge backend/.env pour que `ts-node prisma/seed.ts` dispose de DATABASE_URL
+// (Prisma Client, contrairement à la CLI Prisma, ne lit pas .env tout seul).
+import 'dotenv/config';
 import {
   ActivityStatus,
   ActivityType,
   DocumentType,
+  ExpenseCategory,
+  ExpenseStatus,
   InvoiceStatus,
   LeadStatus,
+  LeaveStatus,
+  LeaveType,
   OpportunityStage,
   OrderStatus,
   PartnerType,
   PaymentMethod,
   PrismaClient,
   ProductType,
+  ProjectStatus,
   PurchaseOrderStatus,
   QuoteStatus,
   StockMovementType,
+  TaskStatus,
 } from '@prisma/client';
 import {
   computeDocumentTotals,
   computeLineTotals,
 } from '../src/common/documents/totals';
+import {
+  computeExpenseLine,
+  sumExpenseLines,
+} from '../src/modules/hr/expense-totals';
+import { countWorkingDays } from '../src/modules/hr/leave-days';
 import * as bcrypt from 'bcrypt';
 import {
   PERMISSION_CATALOG,
@@ -236,6 +250,20 @@ async function main() {
   if (fresh) {
     // Ordre imposé par les clés étrangères. Seule la société de démo est
     // touchée : comptes, rôles et permissions sont conservés.
+    // Projets : temps → tâches → projets (avant les tiers, qu'ils référencent).
+    await prisma.timeEntry.deleteMany({
+      where: { project: { companyId: company.id } },
+    });
+    await prisma.task.deleteMany({
+      where: { project: { companyId: company.id } },
+    });
+    await prisma.project.deleteMany({ where: { companyId: company.id } });
+    // RH : les congés et notes de frais tombent en cascade avec l'employé.
+    await prisma.expenseReport.deleteMany({ where: { companyId: company.id } });
+    await prisma.leaveRequest.deleteMany({
+      where: { employee: { companyId: company.id } },
+    });
+    await prisma.employee.deleteMany({ where: { companyId: company.id } });
     await prisma.activity.deleteMany({ where: { companyId: company.id } });
     await prisma.opportunity.deleteMany({ where: { companyId: company.id } });
     await prisma.lead.deleteMany({ where: { companyId: company.id } });
@@ -1037,6 +1065,358 @@ async function main() {
     });
   }
   console.log(`✅ ${activitySeeds.length} activités`);
+
+  // --- 14. Ressources humaines ---------------------------------------------
+  // Les trois comptes de démo ont leur fiche salarié ; deux collègues
+  // supplémentaires n'ont pas d'accès applicatif (cas courant en PME).
+  const employeeSeeds = [
+    {
+      key: 'alice',
+      firstName: 'Alice',
+      lastName: 'Martin',
+      email: 'admin@demo.com',
+      position: 'Directrice générale',
+      department: 'Direction',
+      username: 'admin',
+      monthsHired: 48,
+      paidLeaveBalance: 25,
+    },
+    {
+      key: 'karim',
+      firstName: 'Karim',
+      lastName: 'Benali',
+      email: 'commercial@demo.com',
+      position: 'Responsable commercial',
+      department: 'Ventes',
+      username: 'commercial',
+      monthsHired: 30,
+      paidLeaveBalance: 18,
+    },
+    {
+      key: 'chloe',
+      firstName: 'Chloé',
+      lastName: 'Dubois',
+      email: 'lecteur@demo.com',
+      position: 'Comptable',
+      department: 'Administration',
+      username: 'lecteur',
+      monthsHired: 20,
+      paidLeaveBalance: 22,
+    },
+    {
+      key: 'julien',
+      firstName: 'Julien',
+      lastName: 'Faure',
+      email: 'j.faure@democorp.fr',
+      position: 'Développeur',
+      department: 'Production',
+      username: null,
+      monthsHired: 14,
+      paidLeaveBalance: 24,
+    },
+    {
+      key: 'sophie',
+      firstName: 'Sophie',
+      lastName: 'Nguyen',
+      email: 's.nguyen@democorp.fr',
+      position: 'Cheffe de projet',
+      department: 'Production',
+      username: null,
+      monthsHired: 9,
+      paidLeaveBalance: 25,
+    },
+  ];
+
+  const employees: Record<string, { id: number }> = {};
+  for (const seed of employeeSeeds) {
+    const hireDate = monthsBefore(seed.monthsHired);
+    const employee = await prisma.employee.create({
+      data: {
+        companyId: company.id,
+        firstName: seed.firstName,
+        lastName: seed.lastName,
+        email: seed.email,
+        position: seed.position,
+        department: seed.department,
+        hireDate,
+        paidLeaveBalance: seed.paidLeaveBalance,
+        userId: seed.username ? userIds[seed.username] : null,
+      },
+    });
+    employees[seed.key] = employee;
+  }
+  console.log(`✅ ${employeeSeeds.length} employés`);
+
+  // Congés : un mix de types et de statuts, avec le nombre de jours ouvrés
+  // calculé comme le fait le service (jours fériés français exclus).
+  const leaveSeeds = [
+    {
+      employee: 'karim',
+      type: LeaveType.PAID,
+      status: LeaveStatus.APPROVED,
+      start: daysFrom(new Date(), -30),
+      end: daysFrom(new Date(), -24),
+      reason: 'Congés d’été',
+      decided: 'admin',
+    },
+    {
+      employee: 'julien',
+      type: LeaveType.RTT,
+      status: LeaveStatus.APPROVED,
+      start: daysFrom(new Date(), -10),
+      end: daysFrom(new Date(), -10),
+      reason: 'RTT',
+      decided: 'admin',
+    },
+    {
+      employee: 'sophie',
+      type: LeaveType.PAID,
+      status: LeaveStatus.PENDING,
+      start: daysFrom(new Date(), 20),
+      end: daysFrom(new Date(), 31),
+      reason: 'Vacances scolaires',
+      decided: null,
+    },
+    {
+      employee: 'chloe',
+      type: LeaveType.SICK,
+      status: LeaveStatus.APPROVED,
+      start: daysFrom(new Date(), -5),
+      end: daysFrom(new Date(), -3),
+      reason: 'Arrêt maladie',
+      decided: 'admin',
+    },
+  ];
+
+  for (const seed of leaveSeeds) {
+    const decided = seed.status !== LeaveStatus.PENDING;
+    await prisma.leaveRequest.create({
+      data: {
+        employeeId: employees[seed.employee].id,
+        type: seed.type,
+        status: seed.status,
+        startDate: seed.start,
+        endDate: seed.end,
+        days: countWorkingDays(seed.start, seed.end),
+        reason: seed.reason,
+        decidedById: decided && seed.decided ? userIds[seed.decided] : null,
+        decidedAt: decided ? daysFrom(seed.start, -3) : null,
+      },
+    });
+  }
+  console.log(`✅ ${leaveSeeds.length} demandes de congé`);
+
+  // Notes de frais : totaux HT / TVA / TTC calculés par les helpers du domaine.
+  const year = new Date().getFullYear();
+  let expenseCounter = 0;
+  const expenseSeeds = [
+    {
+      employee: 'karim',
+      status: ExpenseStatus.SUBMITTED,
+      monthsAgo: 1,
+      notes: 'Salon professionnel + déplacements clients',
+      decided: null,
+      lines: [
+        {
+          category: ExpenseCategory.TRAVEL,
+          description: 'Billet de train Paris–Lyon',
+          amountHT: 92,
+          vatRate: 10,
+        },
+        {
+          category: ExpenseCategory.ACCOMMODATION,
+          description: 'Hôtel 2 nuits',
+          amountHT: 210,
+          vatRate: 10,
+        },
+        {
+          category: ExpenseCategory.MEAL,
+          description: 'Repas clients',
+          amountHT: 68,
+          vatRate: 10,
+        },
+      ],
+    },
+    {
+      employee: 'julien',
+      status: ExpenseStatus.REIMBURSED,
+      monthsAgo: 2,
+      notes: 'Matériel et fournitures',
+      decided: 'admin',
+      lines: [
+        {
+          category: ExpenseCategory.SUPPLIES,
+          description: 'Adaptateurs et câbles',
+          amountHT: 45,
+          vatRate: 20,
+        },
+        {
+          category: ExpenseCategory.MEAL,
+          description: 'Déjeuner équipe',
+          amountHT: 54,
+          vatRate: 10,
+        },
+      ],
+    },
+  ];
+
+  for (const seed of expenseSeeds) {
+    expenseCounter += 1;
+    const ref = `NF${year}-${String(expenseCounter).padStart(4, '0')}`;
+    const period = monthsBefore(seed.monthsAgo);
+    period.setDate(1);
+    const lineTotals = seed.lines.map((line) => computeExpenseLine(line));
+    const totals = sumExpenseLines(lineTotals);
+    // Seules les notes remboursées portent une décision dans ce jeu de démo.
+    const decided = seed.status === ExpenseStatus.REIMBURSED;
+
+    await prisma.expenseReport.create({
+      data: {
+        companyId: company.id,
+        employeeId: employees[seed.employee].id,
+        ref,
+        status: seed.status,
+        period,
+        notes: seed.notes,
+        totalHT: totals.totalHT,
+        totalVat: totals.totalVat,
+        totalTTC: totals.totalTTC,
+        decidedById: decided && seed.decided ? userIds[seed.decided] : null,
+        decidedAt: decided ? daysFrom(period, 25) : null,
+        lines: {
+          create: seed.lines.map((line, index) => ({
+            category: line.category,
+            date: daysFrom(period, index * 3 + 2),
+            description: line.description,
+            amountHT: lineTotals[index].amountHT,
+            vatRate: line.vatRate,
+            amountVat: lineTotals[index].amountVat,
+            amountTTC: lineTotals[index].amountTTC,
+          })),
+        },
+      },
+    });
+  }
+  console.log(`✅ ${expenseSeeds.length} notes de frais`);
+
+  // --- 15. Projets ----------------------------------------------------------
+  // Chaque projet porte ses tâches et des temps saisis, dont certains sont
+  // refacturables au client : de quoi alimenter le suivi et une future
+  // facturation au temps passé.
+  let projectCounter = 0;
+  const projectSeeds = [
+    {
+      name: 'Refonte du site vitrine',
+      status: ProjectStatus.ACTIVE,
+      partner: 'Studio Kanto',
+      owner: 'admin',
+      description: 'Nouveau site et intégration au CRM.',
+      monthsAgo: 2,
+      budgetHours: 120,
+      hourlyRate: 85,
+      tasks: [
+        { name: 'Cadrage et maquettes', status: TaskStatus.DONE, estimated: 24, assignee: 'admin' },
+        { name: 'Intégration front', status: TaskStatus.IN_PROGRESS, estimated: 48, assignee: 'commercial' },
+        { name: 'Recette et mise en ligne', status: TaskStatus.TODO, estimated: 16, assignee: null },
+      ],
+      time: [
+        { task: 0, user: 'admin', hours: 18, billable: true, description: 'Ateliers de cadrage' },
+        { task: 1, user: 'commercial', hours: 22, billable: true, description: 'Intégration des pages' },
+        { task: 1, user: 'admin', hours: 4, billable: false, description: 'Revue interne' },
+      ],
+    },
+    {
+      name: 'Déploiement ERP — Groupe Vartex',
+      status: ProjectStatus.ACTIVE,
+      partner: 'Groupe Vartex',
+      owner: 'commercial',
+      description: 'Paramétrage multi-entrepôt et reprise de données.',
+      monthsAgo: 1,
+      budgetHours: 200,
+      hourlyRate: 95,
+      tasks: [
+        { name: 'Reprise des données', status: TaskStatus.IN_PROGRESS, estimated: 60, assignee: 'admin' },
+        { name: 'Formation des utilisateurs', status: TaskStatus.TODO, estimated: 24, assignee: 'commercial' },
+      ],
+      time: [
+        { task: 0, user: 'admin', hours: 26, billable: true, description: 'Import du catalogue et des tiers' },
+        { task: 0, user: 'commercial', hours: 12, billable: true, description: 'Contrôles de cohérence' },
+      ],
+    },
+    {
+      name: 'R&D — module de reporting',
+      status: ProjectStatus.ON_HOLD,
+      partner: null,
+      owner: 'admin',
+      description: 'Prototype interne, non refacturable.',
+      monthsAgo: 3,
+      budgetHours: 80,
+      hourlyRate: 0,
+      tasks: [
+        { name: 'État de l’art', status: TaskStatus.DONE, estimated: 12, assignee: 'admin' },
+        { name: 'Prototype', status: TaskStatus.TODO, estimated: 40, assignee: null },
+      ],
+      time: [
+        { task: 0, user: 'admin', hours: 9, billable: false, description: 'Veille et benchmark' },
+      ],
+    },
+  ];
+
+  let taskTotal = 0;
+  let timeTotal = 0;
+  for (const seed of projectSeeds) {
+    projectCounter += 1;
+    const ref = `PR-${String(projectCounter).padStart(4, '0')}`;
+    const startDate = monthsBefore(seed.monthsAgo);
+    const project = await prisma.project.create({
+      data: {
+        companyId: company.id,
+        ref,
+        name: seed.name,
+        status: seed.status,
+        description: seed.description,
+        startDate,
+        budgetHours: seed.budgetHours,
+        hourlyRate: seed.hourlyRate,
+        partnerId: seed.partner ? partners[seed.partner].id : null,
+        ownerId: userIds[seed.owner],
+      },
+    });
+
+    const taskIds: number[] = [];
+    for (const [position, task] of seed.tasks.entries()) {
+      const created = await prisma.task.create({
+        data: {
+          projectId: project.id,
+          name: task.name,
+          status: task.status,
+          estimatedHours: task.estimated,
+          position,
+          assigneeId: task.assignee ? userIds[task.assignee] : null,
+        },
+      });
+      taskIds.push(created.id);
+      taskTotal += 1;
+    }
+
+    for (const entry of seed.time) {
+      await prisma.timeEntry.create({
+        data: {
+          projectId: project.id,
+          taskId: taskIds[entry.task] ?? null,
+          userId: userIds[entry.user],
+          date: daysFrom(startDate, entry.task * 5 + 3),
+          hours: entry.hours,
+          billable: entry.billable,
+          description: entry.description,
+        },
+      });
+      timeTotal += 1;
+    }
+  }
+  console.log(
+    `✅ ${projectSeeds.length} projets, ${taskTotal} tâches, ${timeTotal} temps saisis`,
+  );
 
   console.log('\n🌱 Seed terminé.\n');
   printCredentials(users);

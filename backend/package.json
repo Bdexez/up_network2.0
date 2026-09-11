@@ -18,12 +18,12 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "seed": "ts-node prisma/seed.ts",
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "seed:fresh": "ts-node prisma/seed.ts --fresh",
+    "seed:fresh": "ts-node -r tsconfig-paths/register prisma/seed.ts --fresh",
     "test:all": "npm run test && npm run test:e2e"
   },
   "dependencies": {
