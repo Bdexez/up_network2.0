@@ -1,10 +1,10 @@
 # Up Network — ERP / CRM
 
-Suite de gestion pour PME : **CRM**, **cycle de vente** (devis → commande →
-facture → règlement), **achats & stock**, **projets**, **ressources humaines**
-et **états comptables** — le tout multi-société, avec un contrôle d'accès fin.
+Management suite for SMEs: **CRM**, **sales cycle** (quote → order → invoice →
+payment), **purchasing & stock**, **projects**, **human resources** and
+**accounting reports** — all multi-company, with fine-grained access control.
 
-API **NestJS + Prisma + PostgreSQL**, interface web **React + Vite + TypeScript**.
+**NestJS + Prisma + PostgreSQL** API, **React + Vite + TypeScript** web interface.
 
 <p>
   <img alt="NestJS" src="https://img.shields.io/badge/API-NestJS%2011-E0234E">
@@ -14,96 +14,96 @@ API **NestJS + Prisma + PostgreSQL**, interface web **React + Vite + TypeScript*
   <img alt="Tests" src="https://img.shields.io/badge/tests-128%20passing-3FB950">
 </p>
 
-| Chiffre | |
+| Figure | |
 |---|---|
-| **10** modules fonctionnels | CRM, ventes, achats, stock, projets, RH, comptabilité, cœur |
-| **84** permissions | catalogue unique, appliqué côté serveur |
-| **34** modèles Prisma · **21** migrations | schéma versionné |
-| **128** tests unitaires | logique métier (totaux, TVA, workflow, congés…) |
-| **26** écrans web · **1** doc OpenAPI | interface `web/` + Swagger sur `/docs` |
+| **10** functional modules | CRM, sales, purchasing, stock, projects, HR, accounting, core |
+| **84** permissions | single catalogue, enforced server-side |
+| **34** Prisma models · **21** migrations | versioned schema |
+| **128** unit tests | business logic (totals, VAT, workflow, leave…) |
+| **26** web screens · **1** OpenAPI doc | `web/` interface + Swagger on `/docs` |
 
 ---
 
-## Sommaire
+## Contents
 
-- [Démarrage](#démarrage)
-- [Comptes de démonstration](#comptes-de-démonstration)
+- [Getting started](#getting-started)
+- [Demo accounts](#demo-accounts)
 - [Architecture](#architecture)
-- [Modèle de sécurité](#modèle-de-sécurité)
+- [Security model](#security-model)
 - [Modules](#modules)
-- [Points d'entrée de l'API](#points-dentrée-de-lapi)
-- [Modèle de données](#modèle-de-données)
-- [Organisation du code](#organisation-du-code)
-- [Développement & tests](#développement--tests)
-- [Le dossier `frontend/` (Flutter)](#le-dossier-frontend-flutter)
+- [API entry points](#api-entry-points)
+- [Data model](#data-model)
+- [Code organisation](#code-organisation)
+- [Development & tests](#development--tests)
+- [The `frontend/` directory (Flutter)](#the-frontend-directory-flutter)
 
 ---
 
-## Démarrage
+## Getting started
 
-Prérequis : **Node 20+**, **Docker** (ou un PostgreSQL déjà installé).
+Requirements: **Node 20+**, **Docker** (or an existing PostgreSQL install).
 
 ```bash
-# 1. Installe les dépendances, lance PostgreSQL, applique les migrations et le seed
+# 1. Install dependencies, start PostgreSQL, apply migrations and seed
 npm run setup
 
-# 2. Prépare l'environnement de l'API
-cp backend/.env.example backend/.env   # valeurs alignées sur docker-compose
+# 2. Prepare the API environment
+cp backend/.env.example backend/.env   # values aligned with docker-compose
 
-# 3. Dans deux terminaux
-npm run dev:api    # http://localhost:3000  (API + doc OpenAPI sur /docs)
-npm run dev:web    # http://localhost:5173  (interface web)
+# 3. In two terminals
+npm run dev:api    # http://localhost:3000  (API + OpenAPI docs on /docs)
+npm run dev:web    # http://localhost:5173  (web interface)
 ```
 
-> `npm install` peut bloquer les scripts d'installation selon la version de npm.
-> Si Prisma ou bcrypt échouent :
+> `npm install` may block install scripts depending on your npm version.
+> If Prisma or bcrypt fail:
 > `npm --prefix backend exec -- npm install-scripts approve @prisma/client @prisma/engines prisma bcrypt`
 
-Une fois l'API lancée : la santé du service est sur
-[`/health`](http://localhost:3000/health) et la documentation interactive des
-routes sur [`/docs`](http://localhost:3000/docs).
+Once the API is running: the service health probe is on
+[`/health`](http://localhost:3000/health) and the interactive route
+documentation on [`/docs`](http://localhost:3000/docs).
 
-### Comptes de démonstration
+### Demo accounts
 
-| Compte | Mot de passe | Rôle | Accès |
+| Account | Password | Role | Access |
 |---|---|---|---|
-| `admin@demo.com` | `admin123` | Admin | tout |
-| `commercial@demo.com` | `demo1234` | Commercial | CRM + ventes, pas d'administration |
-| `lecteur@demo.com` | `demo1234` | Lecteur | consultation seule |
+| `admin@demo.com` | `admin123` | Admin | everything |
+| `commercial@demo.com` | `demo1234` | Sales | CRM + sales, no administration |
+| `lecteur@demo.com` | `demo1234` | Reader | read-only |
 
-Le seed remplit **tous** les modules avec un jeu cohérent : tiers, catalogue et
-stock, devis / commandes / factures / règlements, pipeline CRM, **employés,
-congés et notes de frais**, **projets avec tâches et temps saisis**. De quoi
-voir chaque écran vivant dès la première connexion.
+The seed fills **every** module with a coherent dataset: partners, catalogue and
+stock, quotes / orders / invoices / payments, CRM pipeline, **employees, leave
+requests and expense reports**, **projects with tasks and logged time**. Enough
+to see every screen alive from the first login.
 
-### Variables d'environnement
+### Environment variables
 
-`backend/.env` (modèle dans `backend/.env.example`) :
+`backend/.env` (template in `backend/.env.example`):
 
 ```ini
 DATABASE_URL="postgresql://upnet:upnet@localhost:5433/up_network?schema=public"
-JWT_SECRET="…"                                   # obligatoire, l'API refuse de démarrer sans
+JWT_SECRET="…"                                   # required, the API refuses to start without it
 JWT_EXPIRES_IN="7d"
 PORT=3000
-FRONTEND_URL="http://localhost:5173"             # plusieurs origines séparées par des virgules
-# SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD  # facultatif : sans SMTP_HOST, les e-mails sont journalisés
+FRONTEND_URL="http://localhost:5173"             # several origins, comma-separated
+# SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD  # optional: without SMTP_HOST, e-mails are logged
 SMTP_FROM="facturation@democorp.fr"
 ```
 
-`web/.env` : `VITE_API_URL=http://localhost:3000`
+`web/.env`: `VITE_API_URL=http://localhost:3000`
 
-### Scripts utiles
+### Useful scripts
 
-| Commande | Effet |
+| Command | Effect |
 |---|---|
-| `npm run db:up` / `db:down` | démarre / arrête PostgreSQL (Docker, port **5433**) |
-| `npm run db:migrate` | applique les migrations |
-| `npm run db:seed` | injecte permissions, rôles et comptes (données de démo si la base est vide) |
-| `npm run db:seed:fresh` | remplace les données de démo par un jeu neuf (comptes et rôles conservés) |
-| `npm run db:studio` | ouvre Prisma Studio |
-| `npm run build` | compile l'API et le front |
-| `npm run typecheck` | vérifie les types des deux projets |
-| `npm --prefix backend test` | lance les tests unitaires de l'API |
+| `npm run db:up` / `db:down` | start / stop PostgreSQL (Docker, port **5433**) |
+| `npm run db:migrate` | apply migrations |
+| `npm run db:seed` | insert permissions, roles and accounts (demo data if the database is empty) |
+| `npm run db:seed:fresh` | replace the demo data with a fresh set (accounts and roles kept) |
+| `npm run db:studio` | open Prisma Studio |
+| `npm run build` | build the API and the front end |
+| `npm run typecheck` | type-check both projects |
+| `npm --prefix backend test` | run the API unit tests |
 
 ---
 
@@ -112,15 +112,15 @@ SMTP_FROM="facturation@democorp.fr"
 ```mermaid
 flowchart LR
   subgraph Client
-    W["web/ — React + Vite<br/>(interface maintenue)"]
+    W["web/ — React + Vite<br/>(maintained interface)"]
   end
   subgraph API["backend/ — NestJS"]
     G["JwtAuthGuard<br/>+ PermissionsGuard"]
-    M["Modules métier<br/>CRM · Ventes · Achats · Stock<br/>Projets · RH · Comptabilité"]
-    D["common/documents<br/>totaux · numérotation · workflow"]
+    M["Business modules<br/>CRM · Sales · Purchasing · Stock<br/>Projects · HR · Accounting"]
+    D["common/documents<br/>totals · numbering · workflow"]
   end
   DB[("PostgreSQL<br/>Prisma")]
-  SMTP["SMTP<br/>(rappels, envoi de docs)"]
+  SMTP["SMTP<br/>(reminders, document sending)"]
 
   W -- "JWT Bearer" --> G --> M
   M --> D
@@ -128,133 +128,135 @@ flowchart LR
   M -. "e-mails" .-> SMTP
 ```
 
-Chaque requête traverse `JwtAuthGuard` (identité + société active) puis
-`PermissionsGuard` (droit précis). Les quatre documents commerciaux réutilisent
-les mêmes briques `common/documents` plutôt que de dupliquer le calcul de TVA,
-la numérotation ou les transitions de statut.
+Every request passes through `JwtAuthGuard` (identity + active company) and then
+`PermissionsGuard` (specific right). The four commercial documents reuse the same
+`common/documents` building blocks rather than duplicating VAT computation,
+numbering or status transitions.
 
 ---
 
-## Modèle de sécurité
+## Security model
 
-Trois règles structurent l'API :
+Three rules structure the API:
 
-1. **La société active vient du jeton, jamais du client.** Le JWT porte `companyId` ;
-   les contrôleurs le lisent via le décorateur `@CompanyId()`. Aucune route
-   n'accepte de `?companyId=` — un utilisateur ne peut donc pas lire les
-   données d'une autre société en changeant un paramètre d'URL.
-2. **Chaque route porte sa permission.** `@RequirePermission(module, ressource, action)`
-   est vérifié par `PermissionsGuard`, qui résout le rôle **dans la société active**.
-   Le catalogue fait foi : `backend/src/common/constants/permissions.ts` (84 permissions).
-3. **Le front reflète les permissions, il ne les applique pas.** `/auth/me` renvoie
-   la liste des permissions ; menus et boutons s'adaptent, mais l'autorisation
-   reste décidée côté serveur.
+1. **The active company comes from the token, never from the client.** The JWT
+   carries `companyId`; controllers read it through the `@CompanyId()` decorator.
+   No route accepts a `?companyId=` — so a user cannot read another company's
+   data by changing a URL parameter.
+2. **Every route carries its permission.** `@RequirePermission(module, resource, action)`
+   is checked by `PermissionsGuard`, which resolves the role **within the active
+   company**. The catalogue is authoritative:
+   `backend/src/common/constants/permissions.ts` (84 permissions).
+3. **The front end reflects permissions, it does not enforce them.** `/auth/me`
+   returns the permission list; menus and buttons adapt, but authorisation stays
+   a server-side decision.
 
-À l'inscription, `POST /auth/register` crée la société, un rôle **Admin** doté de
-toutes les permissions, et rattache le compte. Avec un `companyCode`, le compte
-rejoint une société existante **sans rôle** — un admin doit lui en attribuer un.
+On sign-up, `POST /auth/register` creates the company, an **Admin** role holding
+every permission, and attaches the account. With a `companyCode`, the account
+joins an existing company **with no role** — an admin has to assign one.
 
-**Sessions.** Le login renvoie un jeton d'accès court et un **refresh token**
-persistant (`POST /auth/refresh` le renouvelle, `POST /auth/logout` le révoque),
-ce qui permet d'expirer les accès sans déconnecter brutalement l'utilisateur.
+**Sessions.** Login returns a short-lived access token and a persistent **refresh
+token** (`POST /auth/refresh` renews it, `POST /auth/logout` revokes it), which
+makes it possible to expire access without abruptly logging the user out.
 
 ---
 
 ## Modules
 
-**Cœur** — sociétés, utilisateurs, rôles, permissions, multi-société avec bascule
+**Core** — companies, users, roles, permissions, multi-company with switching
 (`/auth/switch-company`).
 
-**CRM** :
-- **Pistes** : statuts (nouvelle → contactée → qualifiée / non qualifiée), source,
-  potentiel estimé, responsable.
-- **Conversion** : une piste devient un tiers, et facultativement une opportunité ;
-  l'opération est transactionnelle et rattache les activités existantes.
-- **Pipeline** : opportunités par étape (qualification, proposition, négociation,
-  gagnée, perdue), montant pondéré par la probabilité, glisser-déposer entre colonnes.
-- **Activités** : appels, réunions, e-mails, tâches, notes — rattachées à une piste,
-  une opportunité ou un tiers, avec échéance et repérage des retards.
-- **Tiers & contacts** : clients, fournisseurs ou les deux, avec interlocuteurs,
-  adresse complète et n° de TVA.
+**CRM**:
+- **Leads**: statuses (new → contacted → qualified / unqualified), source,
+  estimated potential, owner.
+- **Conversion**: a lead becomes a partner, and optionally an opportunity; the
+  operation is transactional and carries existing activities over.
+- **Pipeline**: opportunities by stage (qualification, proposal, negotiation,
+  won, lost), amount weighted by probability, drag and drop between columns.
+- **Activities**: calls, meetings, e-mails, tasks, notes — attached to a lead, an
+  opportunity or a partner, with a due date and overdue tracking.
+- **Partners & contacts**: customers, suppliers or both, with contact people,
+  full address and VAT number.
 
-**Cycle de vente** — devis → commande → facture → règlements :
+**Sales cycle** — quote → order → invoice → payments:
 
-| Document | Référence | Cycle de vie |
+| Document | Reference | Lifecycle |
 |---|---|---|
-| Devis | `DE2026-0001` | brouillon → validé → signé / refusé → converti |
-| Commande | `CO2026-0001` | brouillon → validée → expédiée → facturée |
-| Facture | `FA2026-0001` | brouillon → impayée → partielle → réglée |
-| Avoir | `AV2026-0001` | émis depuis une facture, montants négatifs |
-| Commande fournisseur | `CF2026-0001` | brouillon → commandée → réceptionnée |
+| Quote | `DE2026-0001` | draft → validated → signed / rejected → converted |
+| Order | `CO2026-0001` | draft → validated → shipped → invoiced |
+| Invoice | `FA2026-0001` | draft → unpaid → partial → paid |
+| Credit note | `AV2026-0001` | issued from an invoice, negative amounts |
+| Purchase order | `CF2026-0001` | draft → ordered → received |
 
-- **TVA** : chaque ligne porte quantité, prix unitaire HT, remise et taux de TVA ;
-  les totaux HT / TVA / TTC sont calculés côté serveur, avec un détail par taux.
-- **Documents figés** : chaque document a ses **propres** lignes. Une conversion
-  recopie les lignes, elle ne les partage pas — modifier une commande ne change
-  jamais une facture déjà émise. Un verrou optimiste empêche deux modifications
-  concurrentes de s'écraser.
-- **Multi-devises** : un document peut être libellé dans une autre devise ; le
-  taux et les montants convertis dans la devise société sont figés, pour que la
-  balance âgée et les états comptables restent cohérents.
-- **Avoirs** : une facture peut générer un avoir (note de crédit) qui vient
-  diminuer l'encours.
-- **Règlements** : partiels ou totaux, plusieurs moyens de paiement ; le statut et
-  le reste à payer se déduisent des encaissements, ils ne se saisissent pas.
-- **PDF & envoi** : facture, devis, commande et commande fournisseur exportables
-  en PDF ; une facture s'envoie par e-mail au client (`/invoices/:id/send`).
-- **Pièces jointes** : n'importe quel document peut porter des fichiers
-  (`/attachments`), stockés et re-téléchargeables.
+- **VAT**: each line carries quantity, unit price excl. tax, discount and VAT
+  rate; net / VAT / gross totals are computed server-side, with a breakdown per
+  rate.
+- **Frozen documents**: each document has its **own** lines. A conversion copies
+  the lines, it does not share them — editing an order never changes an invoice
+  already issued. An optimistic lock prevents two concurrent edits from
+  overwriting each other.
+- **Multi-currency**: a document can be denominated in another currency; the rate
+  and the amounts converted into the company currency are frozen, so that the
+  aged balance and the accounting reports stay consistent.
+- **Credit notes**: an invoice can generate a credit note, which reduces the
+  outstanding amount.
+- **Payments**: partial or full, several payment methods; the status and the
+  remaining balance are derived from the receipts, they are not entered by hand.
+- **PDF & sending**: invoice, quote, order and purchase order are exportable to
+  PDF; an invoice can be e-mailed to the customer (`/invoices/:id/send`).
+- **Attachments**: any document can carry files (`/attachments`), stored and
+  downloadable again.
 
-**Achats & stock** :
-- **Entrepôts** multiples, avec un entrepôt par défaut.
-- **Niveaux de stock** par produit et par entrepôt, valorisation au prix d'achat,
-  seuils d'alerte de réapprovisionnement.
-- **Mouvements** : chaque variation est journalisée avec sa quantité signée, le
-  stock résultant et son document d'origine. Expédier une commande sort le stock,
-  réceptionner une commande fournisseur l'entre — automatiquement et dans la même
-  transaction que le changement de statut.
-- **Ajustements et transferts** manuels avec motif.
+**Purchasing & stock**:
+- Multiple **warehouses**, with a default one.
+- **Stock levels** per product and per warehouse, valuation at purchase price,
+  reorder alert thresholds.
+- **Movements**: every variation is logged with its signed quantity, the
+  resulting stock and its source document. Shipping an order takes stock out,
+  receiving a purchase order brings it in — automatically and in the same
+  transaction as the status change.
+- Manual **adjustments and transfers** with a reason.
 
-**Projets** :
-- **Projets** rattachés à un client, avec responsable, budget en heures et taux
-  horaire ; statuts brouillon → actif → en pause → clôturé.
-- **Tâches** ordonnées, avec assigné, estimation et échéance.
-- **Suivi du temps** : saisies horaires par tâche, distinguant le temps
-  **refacturable** du temps interne — base d'une future facturation au temps passé.
+**Projects**:
+- **Projects** attached to a customer, with an owner, a budget in hours and an
+  hourly rate; statuses draft → active → paused → closed.
+- Ordered **tasks**, with assignee, estimate and due date.
+- **Time tracking**: hourly entries per task, distinguishing **billable** time
+  from internal time — the basis for future time-and-materials invoicing.
 
-**Ressources humaines** :
-- **Employés** : fiche par société, rattachable à un compte applicatif, solde de
-  congés payés.
-- **Congés** : demandes typées (CP, RTT, maladie, sans solde…), décompte des
-  **jours ouvrés** en excluant les jours fériés français, circuit d'approbation
-  qui décrémente le solde.
-- **Notes de frais** : lignes catégorisées avec TVA, totaux calculés côté serveur,
-  circuit soumission → approbation → remboursement.
+**Human resources**:
+- **Employees**: one record per company, linkable to an application account,
+  paid-leave balance.
+- **Leave**: typed requests (paid leave, RTT, sick leave, unpaid…), counting of
+  **working days** excluding French public holidays, approval flow that
+  decrements the balance.
+- **Expense reports**: categorised lines with VAT, totals computed server-side,
+  submission → approval → reimbursement flow.
 
-**Comptabilité & pilotage** :
-- **Balance âgée** (`/reports/aging`) : encours client ventilé par ancienneté.
-- **Impayés & relances** (`/reports/overdue`, `+ /:id/reminder`) : factures en
-  retard et envoi de rappels.
-- **TVA** (`/reports/vat`) : TVA collectée et déductible par taux sur une période.
-- **Export FEC** (`/reports/fec`) : fichier des écritures comptables au format
-  réglementaire français.
-- **Tableau de bord** : chiffre d'affaires facturé, encours et retards de paiement,
-  devis en cours, pipeline, meilleurs clients, alertes de stock, activité récente.
+**Accounting & reporting**:
+- **Aged balance** (`/reports/aging`): customer outstandings split by age.
+- **Overdue & reminders** (`/reports/overdue`, `+ /:id/reminder`): late invoices
+  and reminder sending.
+- **VAT** (`/reports/vat`): output and input VAT by rate over a period.
+- **FEC export** (`/reports/fec`): accounting entries file in the French
+  regulatory format.
+- **Dashboard**: invoiced revenue, outstandings and payment delays, open quotes,
+  pipeline, top customers, stock alerts, recent activity.
 
 ---
 
-## Points d'entrée de l'API
+## API entry points
 
-Documentation interactive complète (schémas déduits des DTO) sur **`/docs`**.
+Full interactive documentation (schemas derived from the DTOs) on **`/docs`**.
 
 ```
-GET    /health                         # sonde de disponibilité (public)
+GET    /health                         # availability probe (public)
 
 Auth & session
 POST   /auth/register    POST /auth/login    POST /auth/refresh    POST /auth/logout
 GET    /auth/me          POST /auth/switch-company
 
-Pilotage
+Reporting
 GET    /dashboard/overview | /revenue | /top-partners | /recent
 
 CRM
@@ -265,117 +267,116 @@ PATCH  /crm/opportunities/:id/stage
 GET    /crm/activities       PATCH /crm/activities/:id/toggle
 GET    /partners/:id/contacts   POST /partners/:id/contacts
 
-Cycle de vente
+Sales cycle
 GET    /quotes               POST /quotes             GET  /quotes/:id/pdf
-PATCH  /quotes/:id/status    POST /quotes/:id/convert       → commande
+PATCH  /quotes/:id/status    POST /quotes/:id/convert       → order
 GET    /orders               POST /orders             GET  /orders/:id/pdf
-PATCH  /orders/:id/status    POST /orders/:id/ship          → sortie de stock
-                             POST /orders/:id/invoice       → facture
+PATCH  /orders/:id/status    POST /orders/:id/ship          → stock out
+                             POST /orders/:id/invoice       → invoice
 GET    /invoices             POST /invoices           GET  /invoices/:id/pdf
-PATCH  /invoices/:id/status  POST /invoices/:id/credit-note → avoir
-POST   /invoices/:id/send                                   → e-mail au client
+PATCH  /invoices/:id/status  POST /invoices/:id/credit-note → credit note
+POST   /invoices/:id/send                                   → e-mail to the customer
 GET    /invoices/:id/payments   POST /invoices/:id/payments
 
-Achats & stock
+Purchasing & stock
 GET    /purchases            POST /purchases          GET  /purchases/:id/pdf
-PATCH  /purchases/:id/status POST /purchases/:id/receive    → entrée de stock
+PATCH  /purchases/:id/status POST /purchases/:id/receive    → stock in
 GET    /stock/levels         GET  /stock/movements
 POST   /stock/adjust         POST /stock/transfer
 GET    /stock/warehouses     POST /stock/warehouses
 
-Projets
+Projects
 GET    /projects             POST /projects           PATCH /projects/:id/status
 POST   /projects/:id/tasks   PATCH /projects/:id/tasks/:taskId
 POST   /projects/:id/time    DELETE /projects/:id/time/:entryId
 
-Ressources humaines
+Human resources
 GET    /hr/employees         POST /hr/employees       GET  /hr/employees/me
 GET    /hr/leave-requests    POST /hr/leave-requests  GET  /hr/leave-requests/summary
-PATCH  /hr/leave-requests/:id/status                        → approbation
+PATCH  /hr/leave-requests/:id/status                        → approval
 GET    /hr/expense-reports   POST /hr/expense-reports
-PATCH  /hr/expense-reports/:id/status                       → approbation
+PATCH  /hr/expense-reports/:id/status                       → approval
 
-Comptabilité
+Accounting
 GET    /reports/aging   /reports/overdue   /reports/vat   /reports/fec
 POST   /reports/overdue/:id/reminder
 
-Pièces jointes
+Attachments
 GET    /attachments          POST /attachments        GET  /attachments/:id/download
 
 Administration
-GET    /partners  /products                              (CRUD complet)
+GET    /partners  /products                              (full CRUD)
 GET    /users  /roles  /roles/permissions  /companies/mine  /companies/current
 ```
 
 ---
 
-## Modèle de données
+## Data model
 
-34 modèles Prisma (`backend/prisma/schema.prisma`), tous rattachés à une société.
-Les principaux :
+34 Prisma models (`backend/prisma/schema.prisma`), all attached to a company.
+The main ones:
 
-| Domaine | Modèles |
+| Domain | Models |
 |---|---|
-| Cœur & accès | `Company`, `User`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `RefreshToken` |
+| Core & access | `Company`, `User`, `UserCompany`, `Role`, `Permission`, `RolePermission`, `RefreshToken` |
 | CRM | `Partner`, `Contact`, `Lead`, `Opportunity`, `Activity` |
-| Ventes | `Quote`, `QuoteLine`, `Order`, `OrderLine`, `Invoice`, `InvoiceLine`, `Payment`, `DocumentCounter` |
-| Achats & stock | `PurchaseOrder`, `PurchaseOrderLine`, `Product`, `Warehouse`, `Stock`, `StockMovement` |
-| Projets | `Project`, `Task`, `TimeEntry` |
-| RH | `Employee`, `LeaveRequest`, `ExpenseReport`, `ExpenseLine` |
-| Transverse | `Attachment` |
+| Sales | `Quote`, `QuoteLine`, `Order`, `OrderLine`, `Invoice`, `InvoiceLine`, `Payment`, `DocumentCounter` |
+| Purchasing & stock | `PurchaseOrder`, `PurchaseOrderLine`, `Product`, `Warehouse`, `Stock`, `StockMovement` |
+| Projects | `Project`, `Task`, `TimeEntry` |
+| HR | `Employee`, `LeaveRequest`, `ExpenseReport`, `ExpenseLine` |
+| Cross-cutting | `Attachment` |
 
-Les cycles de vie sont des énumérations Prisma (`InvoiceStatus`, `OrderStatus`,
-`LeaveStatus`, `ProjectStatus`…), déclarées une seule fois et partagées par le
-back et le front.
+Lifecycles are Prisma enums (`InvoiceStatus`, `OrderStatus`, `LeaveStatus`,
+`ProjectStatus`…), declared once and shared by the back end and the front end.
 
 ---
 
-## Organisation du code
+## Code organisation
 
-Les documents commerciaux partagent leurs briques plutôt que de les dupliquer :
+Commercial documents share their building blocks rather than duplicating them:
 
-| Brique | Rôle |
+| Block | Role |
 |---|---|
-| `common/documents/totals.ts` | seul endroit où se calculent HT, TVA et TTC |
-| `common/documents/lines.service.ts` | complète les lignes depuis le catalogue et fige libellé, prix et TVA |
-| `common/documents/numbering.service.ts` | compteur par société / type / année, incrémenté dans la transaction de création |
-| `common/documents/workflow.ts` | transitions de statut autorisées et verrouillage des documents figés |
-| `modules/*/[…]-status.ts` | le cycle de vie de chaque document, déclaré une fois |
-| `modules/hr/expense-totals.ts` · `leave-days.ts` | totaux de frais et décompte des jours ouvrés (jours fériés français) |
+| `common/documents/totals.ts` | the only place where net, VAT and gross are computed |
+| `common/documents/lines.service.ts` | completes lines from the catalogue and freezes label, price and VAT |
+| `common/documents/numbering.service.ts` | counter per company / type / year, incremented inside the creation transaction |
+| `common/documents/workflow.ts` | allowed status transitions and locking of frozen documents |
+| `modules/*/[…]-status.ts` | each document's lifecycle, declared once |
+| `modules/hr/expense-totals.ts` · `leave-days.ts` | expense totals and working-day counting (French public holidays) |
 
-Côté interface, `components/documents/` reprend la même logique : `LineEditor`,
-`DocumentTotals`, `StatusBadge`, `StatusActions` et `DocumentFormModal` servent
-les quatre écrans de document. Les cycles de vie côté client vivent dans
-`lib/documents.ts` — ils ne servent qu'à n'afficher que les boutons utiles,
-l'API restant seule juge de ce qui est autorisé.
+On the interface side, `components/documents/` follows the same logic:
+`LineEditor`, `DocumentTotals`, `StatusBadge`, `StatusActions` and
+`DocumentFormModal` serve all four document screens. Client-side lifecycles live
+in `lib/documents.ts` — they only exist to display the useful buttons, the API
+remaining the sole judge of what is allowed.
 
 ---
 
-## Développement & tests
+## Development & tests
 
 ```bash
-npm run typecheck                 # types des deux projets
-npm --prefix backend test         # 128 tests unitaires (Jest)
-npm run build                     # compile l'API et le front
+npm run typecheck                 # types of both projects
+npm --prefix backend test         # 128 unit tests (Jest)
+npm run build                     # build the API and the front end
 ```
 
-Les tests couvrent la logique métier isolée et pure : calcul des totaux et de la
-TVA, verrou optimiste, transitions de statut, conversion partielle, avoirs,
-échéances de paiement, multi-devises, décompte des jours ouvrés, totaux de notes
-de frais, balance âgée, stockage des pièces jointes, pagination.
+The tests cover isolated, pure business logic: totals and VAT computation,
+optimistic lock, status transitions, partial conversion, credit notes, payment
+due dates, multi-currency, working-day counting, expense report totals, aged
+balance, attachment storage, pagination.
 
-Le **seed** (`backend/prisma/seed.ts`) est idempotent : il crée permissions,
-rôles et comptes s'ils manquent, et ne réécrit les données de démonstration que
-sur `--fresh`. Il réutilise les mêmes helpers de calcul que l'application, si
-bien que les montants seedés sont exactement ceux que produirait l'API.
+The **seed** (`backend/prisma/seed.ts`) is idempotent: it creates permissions,
+roles and accounts if they are missing, and only rewrites the demo data on
+`--fresh`. It reuses the same computation helpers as the application, so the
+seeded amounts are exactly the ones the API would produce.
 
 ---
 
-## Le dossier `frontend/` (Flutter)
+## The `frontend/` directory (Flutter)
 
-C'est le template commercial d'origine : environ 200 écrans de démonstration
-(chat, kanban, e-mail, cartes…) dont deux seulement étaient reliés à l'API, avec
-deux couches d'authentification concurrentes. Il est laissé en place pour
-référence mais **n'est plus la cible** : l'interface maintenue est `web/`.
-Il n'a pas été mis à jour pour la nouvelle API (le `companyId` n'est plus un
-paramètre de requête), donc ses écrans produits ne fonctionneraient plus tels quels.
+This is the original commercial template: roughly 200 demo screens (chat, kanban,
+e-mail, maps…) of which only two were wired to the API, with two competing
+authentication layers. It is kept for reference but is **no longer the target**:
+the maintained interface is `web/`.
+It has not been updated for the new API (`companyId` is no longer a query
+parameter), so its product screens would no longer work as they are.
